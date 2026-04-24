@@ -15,66 +15,50 @@
     <script type="module" src="./app.js" defer></script>
   </head>
   <body>
-    <div class="ambient-aurora" aria-hidden="true">
-      <span class="aurora-band aurora-band-1"></span>
-      <span class="aurora-band aurora-band-2"></span>
-      <span class="aurora-band aurora-band-3"></span>
-    </div>
-    <div class="ambient-orbs" aria-hidden="true">
-      <span class="orb orb-1"></span>
-      <span class="orb orb-2"></span>
-      <span class="orb orb-3"></span>
-      <span class="orb orb-4"></span>
-      <span class="orb orb-5"></span>
-    </div>
-    <div class="ambient-particles" aria-hidden="true">
-      <span class="particle particle-1"></span>
-      <span class="particle particle-2"></span>
-      <span class="particle particle-3"></span>
-      <span class="particle particle-4"></span>
-      <span class="particle particle-5"></span>
-      <span class="particle particle-6"></span>
-      <span class="particle particle-7"></span>
-      <span class="particle particle-8"></span>
-      <span class="particle particle-9"></span>
-      <span class="particle particle-10"></span>
-      <span class="particle particle-11"></span>
-      <span class="particle particle-12"></span>
-      <span class="particle particle-13"></span>
-      <span class="particle particle-14"></span>
-      <span class="particle particle-15"></span>
-      <span class="particle particle-16"></span>
-      <span class="particle particle-17"></span>
-      <span class="particle particle-18"></span>
-      <span class="particle particle-19"></span>
-      <span class="particle particle-20"></span>
-      <span class="particle particle-21"></span>
-      <span class="particle particle-22"></span>
-      <span class="particle particle-23"></span>
-      <span class="particle particle-24"></span>
-    </div>
     <div class="page-shell">
       <header class="topbar">
         <div class="brand-block">
-          <div class="brand-mark">SS</div>
-          <div>
-            <p class="eyebrow">AI Трекер Расходов</p>
+          <div class="brand-mark" aria-hidden="true">
+            <span class="brand-symbol">₴</span>
+          </div>
+          <div class="brand-copy">
+            <p class="eyebrow">Обсерватория личных расходов</p>
             <h1>SpendSoul</h1>
+            <p class="brand-note">Темная аналитическая консоль для наблюдения за расходами</p>
           </div>
         </div>
+
+        <nav class="view-tabs" aria-label="Разделы учета">
+          <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
+          <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
+          <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
+        </nav>
       </header>
+
+      <div id="expensesView" class="app-view">
+      <section class="latest-strip" aria-label="Последние траты">
+        <div class="latest-strip-head">
+          <p class="latest-label">Всего в архиве</p>
+          <div class="latest-count-line">
+            <strong id="latestExpenseCount">0</strong>
+            <span id="latestExpenseCountLabel">записей</span>
+          </div>
+          <small id="latestExpenseHint">Последние 4 справа</small>
+        </div>
+        <div id="latestExpenseList" class="latest-expense-list"></div>
+      </section>
 
       <section class="hero-grid">
         <div class="hero-copy-card hero-copy-card-wide">
-          <p class="hero-kicker">Новая Запись</p>
+          <p class="hero-kicker">Журнал наблюдений</p>
           <div class="hero-form-head">
             <div>
               <h2>Новая трата</h2>
               <p class="hero-copy">
-                Введите базовые данные. AI определит товар, категорию, получателя и подготовит запись к сохранению.
+                Зафиксируйте трату как сигнал. ИИ распознает товар, категорию, получателя и подготовит чистую запись.
               </p>
             </div>
-            <div class="panel-chip">Ввод Онлайн</div>
+            <div class="panel-chip">Ввод онлайн</div>
           </div>
 
           <form id="expenseForm" class="expense-form hero-expense-form">
@@ -87,7 +71,7 @@
 
               <div class="compact-fields">
                 <label class="compact-field compact-field-amount">
-                  <span>Сумма / шт.</span>
+                  <span>Цена за 1 шт.</span>
                   <input
                     type="number"
                     id="amount"
@@ -143,7 +127,7 @@
 
             <div class="form-actions">
               <button type="submit" id="submitButton">Сохранить</button>
-              <button type="button" id="clearLocalButton" class="ghost-button">Очистить Кеш</button>
+              <button type="button" id="clearLocalButton" class="ghost-button">Очистить локально</button>
             </div>
 
             <p id="statusMessage" class="status-message" aria-live="polite"></p>
@@ -152,7 +136,7 @@
 
         <div class="hero-stat-card hero-stat-card-primary hero-stat-card-summary">
           <div class="hero-stat-header">
-            <span class="stat-label">Общая Сумма</span>
+            <span class="stat-label">Сигнал месяца</span>
             <div class="month-nav">
               <button type="button" class="month-nav-button ghost-button" id="prevMonthButton" aria-label="Предыдущий месяц"></button>
               <span id="monthLabel" class="month-label">Месяц</span>
@@ -170,9 +154,9 @@
         <section class="panel analytics-panel">
           <div class="panel-header-row">
             <div class="panel-heading">
-              <p class="panel-label">Тренды Расходов</p>
+              <p class="panel-label">Поток аналитики</p>
               <h2>Аналитика расходов</h2>
-              <p>Сводка строится по данным из Cloudflare Worker и локального кеша, как в терминале аналитики.</p>
+              <p>Сводка строится по данным с сервера и локального кеша, как в ночной консоли наблюдения.</p>
             </div>
           </div>
 
@@ -208,10 +192,10 @@
             <article class="chart-card chart-card-donut chart-card-category">
               <div class="chart-card-head">
                 <div>
-                  <p class="chart-kicker">Категории</p>
+                  <p class="chart-kicker">Созвездие трат</p>
                   <h3>По категориям</h3>
                 </div>
-                <span class="chart-pill">AI</span>
+                <span class="chart-pill">ИИ-анализ</span>
               </div>
               <div class="chart-canvas-wrap">
                 <canvas id="categoryChart"></canvas>
@@ -224,7 +208,7 @@
                   <p class="chart-kicker">Получатели</p>
                   <h3>По получателю</h3>
                 </div>
-                <span class="chart-pill">Срез</span>
+                <span class="chart-pill">Орбита</span>
               </div>
               <div class="chart-canvas-wrap">
                 <canvas id="forWhomChart"></canvas>
@@ -249,10 +233,10 @@
             <article class="chart-card chart-card-week-meta">
               <div class="chart-card-head">
                 <div>
-                  <p class="chart-kicker">Неделя</p>
+                  <p class="chart-kicker">Пульс недели</p>
                   <h3>Сводка</h3>
                 </div>
-                <span class="chart-pill">7 Дней</span>
+                <span class="chart-pill">7 дней</span>
               </div>
               <div id="weekInsight" class="week-insight"></div>
             </article>
@@ -262,9 +246,9 @@
         <section class="panel table-panel">
           <div class="panel-header-row">
             <div class="panel-heading">
-              <p class="panel-label">История Данных</p>
+              <p class="panel-label">Архив записей</p>
               <h2>История расходов</h2>
-              <p>Таблица показывает нормализованные записи в фиксированной схеме в аккуратном темном интерфейсе.</p>
+              <p>Нормализованные записи собраны в темный архив: сумма, категория, получатель и контекст каждой траты.</p>
             </div>
           </div>
 
@@ -274,7 +258,7 @@
                 <tr>
                   <th><button type="button" class="table-sort-button" data-sort-key="id">№</button></th>
                   <th><button type="button" class="table-sort-button" data-sort-key="date">Дата</button></th>
-                  <th><button type="button" class="table-sort-button" data-sort-key="amount">Сумма</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="amount">Итого</button></th>
                   <th><button type="button" class="table-sort-button" data-sort-key="quantity">Кол-во</button></th>
                   <th><button type="button" class="table-sort-button" data-sort-key="description_raw">Описание</button></th>
                   <th><button type="button" class="table-sort-button" data-sort-key="product_name">Товар</button></th>
@@ -290,9 +274,207 @@
           </div>
         </section>
       </main>
+      </div>
+
+      <div id="incomesView" class="app-view hidden">
+        <section class="income-grid">
+          <div class="hero-copy-card income-form-card">
+            <p class="hero-kicker">Поступление денег</p>
+            <div class="hero-form-head">
+              <div>
+                <h2>Новый доход</h2>
+                <p class="hero-copy">
+                  Записывайте зарплату, возвраты, подарки и любые поступления отдельно от расходов.
+                </p>
+              </div>
+              <div class="panel-chip">Плюс к балансу</div>
+            </div>
+
+            <form id="incomeForm" class="expense-form hero-expense-form">
+              <label class="date-field">
+                <span>Дата</span>
+                <input type="date" id="incomeDate" name="incomeDate" required />
+                <span class="date-field-icon" aria-hidden="true"></span>
+              </label>
+
+              <label>
+                <span>Сумма</span>
+                <input type="number" id="incomeAmount" name="incomeAmount" min="0" step="0.01" placeholder="0.00" required />
+              </label>
+
+              <label class="full-width">
+                <span>Источник</span>
+                <input type="text" id="incomeSource" name="incomeSource" placeholder="Например: зарплата, фриланс, возврат долга" required />
+              </label>
+
+              <label class="full-width">
+                <span>Заметки</span>
+                <textarea id="incomeNotes" name="incomeNotes" rows="3" placeholder="Например: аванс, бонус, перевод от клиента"></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button type="submit" id="incomeSubmitButton">Сохранить доход</button>
+              </div>
+
+              <p id="incomeStatusMessage" class="status-message" aria-live="polite"></p>
+            </form>
+          </div>
+
+          <div class="hero-stat-card income-stat-card">
+            <span class="stat-label">Доход месяца</span>
+            <strong id="monthlyIncomeAmount">0.00 UAH</strong>
+            <small id="incomeCount">0 поступлений за месяц</small>
+            <div class="income-balance-list">
+              <div>
+                <span>Расходы месяца</span>
+                <strong id="monthlyExpenseMirror">0.00 UAH</strong>
+              </div>
+              <div>
+                <span>Баланс месяца</span>
+                <strong id="monthlyBalanceAmount">0.00 UAH</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel table-panel income-table-panel">
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">Архив поступлений</p>
+              <h2>История доходов</h2>
+              <p>Здесь отдельно живут все входящие деньги, чтобы расходы оставались чистой аналитикой трат.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="income-table">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Дата</th>
+                  <th>Сумма</th>
+                  <th>Источник</th>
+                  <th>Заметки</th>
+                </tr>
+              </thead>
+              <tbody id="incomesTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div id="cryptoView" class="app-view hidden">
+        <section class="income-grid crypto-grid">
+          <div class="hero-copy-card crypto-form-card">
+            <p class="hero-kicker">Крипто портфель</p>
+            <div class="hero-form-head">
+              <div>
+                <h2>Новая позиция</h2>
+                <p class="hero-copy">
+                  Укажите монету, сколько держите и сколько всего вложили. Текущую стоимость посчитаем по live-цене.
+                </p>
+              </div>
+              <div class="panel-chip">Live price</div>
+            </div>
+
+            <form id="cryptoForm" class="expense-form hero-expense-form">
+              <label>
+                <span>Монета</span>
+                <select id="cryptoCoin" name="cryptoCoin" required>
+                  <option value="bitcoin|BTC|Bitcoin">BTC · Bitcoin</option>
+                  <option value="ethereum|ETH|Ethereum">ETH · Ethereum</option>
+                  <option value="solana|SOL|Solana">SOL · Solana</option>
+                  <option value="tether|USDT|Tether">USDT · Tether</option>
+                  <option value="usd-coin|USDC|USD Coin">USDC · USD Coin</option>
+                  <option value="binancecoin|BNB|BNB">BNB · BNB</option>
+                  <option value="toncoin|TON|Toncoin">TON · Toncoin</option>
+                  <option value="cardano|ADA|Cardano">ADA · Cardano</option>
+                  <option value="ripple|XRP|XRP">XRP · XRP</option>
+                  <option value="dogecoin|DOGE|Dogecoin">DOGE · Dogecoin</option>
+                  <option value="polkadot|DOT|Polkadot">DOT · Polkadot</option>
+                  <option value="chainlink|LINK|Chainlink">LINK · Chainlink</option>
+                  <option value="tron|TRX|TRON">TRX · TRON</option>
+                  <option value="avalanche-2|AVAX|Avalanche">AVAX · Avalanche</option>
+                  <option value="kaspa|KAS|Kaspa">KAS · Kaspa</option>
+                  <option value="near|NEAR|NEAR Protocol">NEAR · NEAR</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Количество монет</span>
+                <input type="number" id="cryptoAmountHeld" name="cryptoAmountHeld" min="0" step="0.00000001" placeholder="0.00000000" required />
+              </label>
+
+              <label>
+                <span>Всего вложил, UAH</span>
+                <input type="number" id="cryptoInvestedAmount" name="cryptoInvestedAmount" min="0" step="0.01" placeholder="0.00" required />
+              </label>
+
+              <label>
+                <span>Заметки</span>
+                <input type="text" id="cryptoNotes" name="cryptoNotes" placeholder="Например: Binance, Ledger, DCA" />
+              </label>
+
+              <div class="form-actions">
+                <button type="submit" id="cryptoSubmitButton">Сохранить позицию</button>
+                <button type="button" id="refreshCryptoPricesButton" class="ghost-button">Обновить цены</button>
+              </div>
+
+              <p id="cryptoStatusMessage" class="status-message" aria-live="polite"></p>
+            </form>
+          </div>
+
+          <div class="hero-stat-card crypto-stat-card">
+            <span class="stat-label">Стоимость портфеля</span>
+            <strong id="cryptoCurrentValue">0.00 UAH</strong>
+            <small id="cryptoPriceStatus">Цены еще не загружены</small>
+            <div class="income-balance-list">
+              <div>
+                <span>Вложено</span>
+                <strong id="cryptoInvestedValue">0.00 UAH</strong>
+              </div>
+              <div>
+                <span>Результат</span>
+                <strong id="cryptoProfitValue">0.00 UAH</strong>
+              </div>
+              <div>
+                <span>Доходность</span>
+                <strong id="cryptoReturnPercent">0.00%</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel table-panel crypto-table-panel">
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">Позиции</p>
+              <h2>Крипто активы</h2>
+              <p>Портфель считается вручную по количеству монет и автоматически по текущей цене CoinGecko.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="crypto-table">
+              <thead>
+                <tr>
+                  <th>Монета</th>
+                  <th>Количество</th>
+                  <th>Цена</th>
+                  <th>Сейчас</th>
+                  <th>Вложено</th>
+                  <th>P/L</th>
+                  <th>Заметки</th>
+                </tr>
+              </thead>
+              <tbody id="cryptoTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
 
-        <div id="confirmModal" class="modal hidden" aria-hidden="true">
+    <div id="confirmModal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="true"></div>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
         <div class="modal-header">

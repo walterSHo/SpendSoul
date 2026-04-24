@@ -33,6 +33,22 @@ export default {
         return jsonResponse(expenses);
       }
 
+      if (request.method === "GET" && url.pathname === "/api/incomes") {
+        const incomes = await loadIncomes(env);
+        return jsonResponse(incomes);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/crypto-assets") {
+        const cryptoAssets = await loadCryptoAssets(env);
+        return jsonResponse(cryptoAssets);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/crypto-prices") {
+        const ids = parseCryptoPriceIds(url);
+        const prices = await fetchCryptoPrices(ids, env);
+        return jsonResponse(prices);
+      }
+
       if (request.method === "POST" && url.pathname === "/api/normalize-expense") {
         const body = await request.json();
         validateIncomingPayload(body);
@@ -51,6 +67,8 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/api/add-expense") {
         const body = await request.json();
+        validateIncomingPayload(body);
+
         const nextId = Number(body?.id) || (await getNextExpenseId(env));
         const sanitizedExpense = sanitizeExpense(body, nextId, body);
 
@@ -58,33 +76,91 @@ export default {
         return jsonResponse(sanitizedExpense, 201);
       }
 
+      if (request.method === "POST" && url.pathname === "/api/add-income") {
+        const body = await request.json();
+        validateIncomePayload(body);
+
+        const nextId = Number(body?.id) || (await getNextIncomeId(env));
+        const sanitizedIncome = sanitizeIncome(body, nextId);
+
+        await saveIncome(env, sanitizedIncome);
+        return jsonResponse(sanitizedIncome, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/add-crypto-asset") {
+        const body = await request.json();
+        validateCryptoAssetPayload(body);
+
+        const nextId = Number(body?.id) || (await getNextCryptoAssetId(env));
+        const sanitizedCryptoAsset = sanitizeCryptoAsset(body, nextId);
+
+        await saveCryptoAsset(env, sanitizedCryptoAsset);
+        return jsonResponse(sanitizedCryptoAsset, 201);
+      }
+
       return jsonResponse({ error: "Not found" }, 404);
     } catch (error) {
+      const status = error instanceof RequestValidationError || error instanceof SyntaxError ? 400 : 500;
+
       return jsonResponse(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        500,
+        status,
       );
     }
   },
 };
 
+class RequestValidationError extends Error {}
+
 function validateIncomingPayload(body) {
   if (!body || typeof body !== "object") {
-    throw new Error("Body must be a JSON object.");
+    throw new RequestValidationError("Body must be a JSON object.");
   }
 
   if (!body.date || !body.description_raw) {
-    throw new Error("date and description_raw are required.");
+    throw new RequestValidationError("date and description_raw are required.");
   }
 
   if (typeof body.amount !== "number" || Number.isNaN(body.amount)) {
-    throw new Error("amount must be a number.");
+    throw new RequestValidationError("amount must be a number.");
   }
 
   if (body.quantity !== undefined && (!Number.isInteger(body.quantity) || body.quantity < 1)) {
-    throw new Error("quantity must be a positive integer.");
+    throw new RequestValidationError("quantity must be a positive integer.");
+  }
+}
+
+function validateIncomePayload(body) {
+  if (!body || typeof body !== "object") {
+    throw new RequestValidationError("Body must be a JSON object.");
+  }
+
+  if (!body.date || !body.source) {
+    throw new RequestValidationError("date and source are required.");
+  }
+
+  if (typeof body.amount !== "number" || Number.isNaN(body.amount) || body.amount <= 0) {
+    throw new RequestValidationError("amount must be a positive number.");
+  }
+}
+
+function validateCryptoAssetPayload(body) {
+  if (!body || typeof body !== "object") {
+    throw new RequestValidationError("Body must be a JSON object.");
+  }
+
+  if (!body.name || !body.symbol || !body.coingecko_id) {
+    throw new RequestValidationError("name, symbol, and coingecko_id are required.");
+  }
+
+  if (typeof body.amount_held !== "number" || Number.isNaN(body.amount_held) || body.amount_held <= 0) {
+    throw new RequestValidationError("amount_held must be a positive number.");
+  }
+
+  if (typeof body.invested_amount !== "number" || Number.isNaN(body.invested_amount) || body.invested_amount < 0) {
+    throw new RequestValidationError("invested_amount must be a non-negative number.");
   }
 }
 
@@ -94,6 +170,32 @@ async function loadExpenses(env) {
   }
 
   const raw = await env.EXPENSES_KV.get("expenses");
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadIncomes(env) {
+  return loadJsonArray(env, "incomes");
+}
+
+async function loadCryptoAssets(env) {
+  return loadJsonArray(env, "crypto_assets");
+}
+
+async function loadJsonArray(env, key) {
+  if (!env.EXPENSES_KV) {
+    return [];
+  }
+
+  const raw = await env.EXPENSES_KV.get(key);
   if (!raw) {
     return [];
   }
@@ -117,9 +219,51 @@ async function saveExpense(env, expense) {
   await env.EXPENSES_KV.put("expenses", JSON.stringify(nextExpenses));
 }
 
+async function saveIncome(env, income) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  const currentIncomes = await loadIncomes(env);
+  const nextIncomes = currentIncomes.filter((item) => Number(item?.id) !== Number(income?.id));
+  nextIncomes.push(income);
+  await env.EXPENSES_KV.put("incomes", JSON.stringify(nextIncomes));
+}
+
+async function saveCryptoAsset(env, cryptoAsset) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  const currentCryptoAssets = await loadCryptoAssets(env);
+  const nextCryptoAssets = currentCryptoAssets.filter((item) => Number(item?.id) !== Number(cryptoAsset?.id));
+  nextCryptoAssets.push(cryptoAsset);
+  await env.EXPENSES_KV.put("crypto_assets", JSON.stringify(nextCryptoAssets));
+}
+
 async function getNextExpenseId(env) {
   const expenses = await loadExpenses(env);
   const maxId = expenses.reduce((max, item) => {
+    const numericId = Number(item.id) || 0;
+    return Math.max(max, numericId);
+  }, 0);
+
+  return maxId + 1;
+}
+
+async function getNextIncomeId(env) {
+  const incomes = await loadIncomes(env);
+  const maxId = incomes.reduce((max, item) => {
+    const numericId = Number(item.id) || 0;
+    return Math.max(max, numericId);
+  }, 0);
+
+  return maxId + 1;
+}
+
+async function getNextCryptoAssetId(env) {
+  const cryptoAssets = await loadCryptoAssets(env);
+  const maxId = cryptoAssets.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
@@ -316,11 +460,12 @@ function sanitizeExpense(expense, nextId, payload) {
   const safeSubCategory = normalizeCategoryField(expense?.sub_category, inferredCategories.sub_category);
   const safeSubSubCategory = normalizeCategoryField(expense?.sub_sub_category, inferredCategories.sub_sub_category);
   const safeProductName = normalizeTextField(expense?.product_name, inferredProductName);
+  const safeAmount = normalizeStoredAmount(expense?.amount, payload.amount, quantity);
 
   return {
     id: Number(expense?.id) || nextId,
     date: String(expense?.date || payload.date || ""),
-    amount: calculateTotalAmount(expense?.amount ?? payload.amount ?? 0, quantity),
+    amount: safeAmount,
     quantity,
     currency: String(expense?.currency || "UAH"),
     description_raw: description,
@@ -332,6 +477,66 @@ function sanitizeExpense(expense, nextId, payload) {
     notes: String(expense?.notes || payload.notes || ""),
     ai_hint: String(expense?.ai_hint || payload.ai_hint || ""),
   };
+}
+
+function sanitizeIncome(income, nextId) {
+  return {
+    id: Number(income?.id) || nextId,
+    date: String(income?.date || ""),
+    amount: Number((Number(income?.amount) || 0).toFixed(2)),
+    currency: String(income?.currency || "UAH"),
+    source: String(income?.source || "").trim(),
+    notes: String(income?.notes || ""),
+  };
+}
+
+function sanitizeCryptoAsset(cryptoAsset, nextId) {
+  return {
+    id: Number(cryptoAsset?.id) || nextId,
+    name: String(cryptoAsset?.name || "").trim(),
+    symbol: String(cryptoAsset?.symbol || "").trim().toUpperCase(),
+    coingecko_id: String(cryptoAsset?.coingecko_id || "").trim().toLowerCase(),
+    amount_held: Number((Number(cryptoAsset?.amount_held) || 0).toFixed(10)),
+    invested_amount: Number((Number(cryptoAsset?.invested_amount) || 0).toFixed(2)),
+    currency: String(cryptoAsset?.currency || "UAH"),
+    notes: String(cryptoAsset?.notes || ""),
+    updated_at: String(cryptoAsset?.updated_at || new Date().toISOString()),
+  };
+}
+
+function parseCryptoPriceIds(url) {
+  const rawIds = String(url.searchParams.get("ids") || "");
+  const ids = rawIds
+    .split(",")
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!ids.length) {
+    throw new RequestValidationError("ids query parameter is required.");
+  }
+
+  return [...new Set(ids)].slice(0, 50);
+}
+
+async function fetchCryptoPrices(ids, env) {
+  const priceUrl = new URL("https://api.coingecko.com/api/v3/simple/price");
+  priceUrl.searchParams.set("ids", ids.join(","));
+  priceUrl.searchParams.set("vs_currencies", "uah,usd");
+  priceUrl.searchParams.set("include_24hr_change", "true");
+  priceUrl.searchParams.set("include_last_updated_at", "true");
+
+  const headers = {};
+  if (env.COINGECKO_API_KEY) {
+    headers["x-cg-demo-api-key"] = env.COINGECKO_API_KEY;
+  }
+
+  const response = await fetch(priceUrl.toString(), { headers });
+
+  if (!response.ok) {
+    throw new Error(`Crypto price request failed with status ${response.status}.`);
+  }
+
+  return response.json();
 }
 
 function jsonResponse(payload, status = 200) {
@@ -556,7 +761,15 @@ function normalizeTextField(value, fallbackValue) {
 }
 
 function normalizeQuantity(value) {
-  return Math.max(1, Number(value) || 1);
+  return Math.max(1, Math.trunc(Number(value) || 1));
+}
+
+function normalizeStoredAmount(expenseAmount, payloadAmount, quantity) {
+  if (expenseAmount !== undefined && expenseAmount !== null) {
+    return Number((Number(expenseAmount) || 0).toFixed(2));
+  }
+
+  return calculateTotalAmount(payloadAmount, quantity);
 }
 
 function calculateTotalAmount(amount, quantity) {
