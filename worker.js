@@ -112,8 +112,9 @@ async function saveExpense(env, expense) {
   }
 
   const currentExpenses = await loadExpenses(env);
-  currentExpenses.push(expense);
-  await env.EXPENSES_KV.put("expenses", JSON.stringify(currentExpenses));
+  const nextExpenses = currentExpenses.filter((item) => Number(item?.id) !== Number(expense?.id));
+  nextExpenses.push(expense);
+  await env.EXPENSES_KV.put("expenses", JSON.stringify(nextExpenses));
 }
 
 async function getNextExpenseId(env) {
@@ -586,7 +587,6 @@ function buildNormalizationDecision(expense, existingExpenses) {
   const fields = [
     { key: "category", label: "Категория", value: expense.category },
     { key: "sub_category", label: "Подкатегория", value: expense.sub_category },
-    { key: "sub_sub_category", label: "Под-подкатегория", value: expense.sub_sub_category },
     { key: "for_whom", label: "Для кого", value: expense.for_whom },
   ];
 

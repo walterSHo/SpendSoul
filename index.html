@@ -15,52 +15,100 @@
     <script type="module" src="./app.js" defer></script>
   </head>
   <body>
+    <div class="ambient-aurora" aria-hidden="true">
+      <span class="aurora-band aurora-band-1"></span>
+      <span class="aurora-band aurora-band-2"></span>
+      <span class="aurora-band aurora-band-3"></span>
+    </div>
+    <div class="ambient-orbs" aria-hidden="true">
+      <span class="orb orb-1"></span>
+      <span class="orb orb-2"></span>
+      <span class="orb orb-3"></span>
+      <span class="orb orb-4"></span>
+      <span class="orb orb-5"></span>
+    </div>
+    <div class="ambient-particles" aria-hidden="true">
+      <span class="particle particle-1"></span>
+      <span class="particle particle-2"></span>
+      <span class="particle particle-3"></span>
+      <span class="particle particle-4"></span>
+      <span class="particle particle-5"></span>
+      <span class="particle particle-6"></span>
+      <span class="particle particle-7"></span>
+      <span class="particle particle-8"></span>
+      <span class="particle particle-9"></span>
+      <span class="particle particle-10"></span>
+      <span class="particle particle-11"></span>
+      <span class="particle particle-12"></span>
+      <span class="particle particle-13"></span>
+      <span class="particle particle-14"></span>
+      <span class="particle particle-15"></span>
+      <span class="particle particle-16"></span>
+      <span class="particle particle-17"></span>
+      <span class="particle particle-18"></span>
+      <span class="particle particle-19"></span>
+      <span class="particle particle-20"></span>
+      <span class="particle particle-21"></span>
+      <span class="particle particle-22"></span>
+      <span class="particle particle-23"></span>
+      <span class="particle particle-24"></span>
+    </div>
     <div class="page-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Personal Expense Tracker</p>
-          <h1>SpendSoul</h1>
-          <p class="hero-copy">
-            Личный AI-трекер трат с нормализацией расходов через Cloudflare Workers и OpenAI.
-          </p>
-        </div>
-        <div class="hero-card">
-          <span>Всего трат</span>
-          <strong id="totalAmount">0.00 UAH</strong>
-          <small id="expenseCount">0 записей</small>
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark">SS</div>
+          <div>
+            <p class="eyebrow">AI Трекер Расходов</p>
+            <h1>SpendSoul</h1>
+          </div>
         </div>
       </header>
 
-      <main class="layout">
-        <section class="panel form-panel">
-          <div class="panel-heading">
-            <h2>Новая трата</h2>
-            <p>Введите дату, сумму и описание. Остальное заполнит AI-нормализация.</p>
+      <section class="hero-grid">
+        <div class="hero-copy-card hero-copy-card-wide">
+          <p class="hero-kicker">Новая Запись</p>
+          <div class="hero-form-head">
+            <div>
+              <h2>Новая трата</h2>
+              <p class="hero-copy">
+                Введите базовые данные. AI определит товар, категорию, получателя и подготовит запись к сохранению.
+              </p>
+            </div>
+            <div class="panel-chip">Ввод Онлайн</div>
           </div>
 
-          <form id="expenseForm" class="expense-form">
-            <label>
-              <span>Дата</span>
-              <input type="date" id="date" name="date" required />
-            </label>
+          <form id="expenseForm" class="expense-form hero-expense-form">
+            <div class="top-form-row full-width">
+              <label class="date-field top-form-date">
+                <span>Дата</span>
+                <input type="date" id="date" name="date" required />
+                <span class="date-field-icon" aria-hidden="true"></span>
+              </label>
 
-            <label>
-              <span>Сумма</span>
-              <input
-                type="number"
-                id="amount"
-                name="amount"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                required
-              />
-            </label>
+              <div class="compact-fields">
+                <label class="compact-field compact-field-amount">
+                  <span>Сумма / шт.</span>
+                  <input
+                    type="number"
+                    id="amount"
+                    name="amount"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    required
+                  />
+                </label>
 
-            <label>
-              <span>Количество</span>
-              <input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required />
-            </label>
+                <label class="compact-field compact-field-quantity">
+                  <span>Количество</span>
+                  <div class="stepper-field">
+                    <button type="button" class="stepper-button" id="quantityDownButton" aria-label="Уменьшить количество">−</button>
+                    <input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required />
+                    <button type="button" class="stepper-button" id="quantityUpButton" aria-label="Увеличить количество">+</button>
+                  </div>
+                </label>
+              </div>
+            </div>
 
             <label class="full-width">
               <span>Описание</span>
@@ -73,7 +121,7 @@
               ></textarea>
             </label>
 
-            <label class="full-width">
+            <label>
               <span>Заметки</span>
               <textarea
                 id="notes"
@@ -83,7 +131,7 @@
               ></textarea>
             </label>
 
-            <label class="full-width">
+            <label>
               <span>Подсказка для ИИ</span>
               <textarea
                 id="ai_hint"
@@ -95,19 +143,37 @@
 
             <div class="form-actions">
               <button type="submit" id="submitButton">Сохранить</button>
-              <button type="button" id="clearLocalButton" class="ghost-button">
-                Очистить localStorage
-              </button>
+              <button type="button" id="clearLocalButton" class="ghost-button">Очистить Кеш</button>
             </div>
 
             <p id="statusMessage" class="status-message" aria-live="polite"></p>
           </form>
-        </section>
+        </div>
 
-        <section class="panel charts-panel">
-          <div class="panel-heading">
-            <h2>Аналитика</h2>
-            <p>Сводка строится по данным из Cloudflare Worker и локального кеша.</p>
+        <div class="hero-stat-card hero-stat-card-primary hero-stat-card-summary">
+          <div class="hero-stat-header">
+            <span class="stat-label">Общая Сумма</span>
+            <div class="month-nav">
+              <button type="button" class="month-nav-button ghost-button" id="prevMonthButton" aria-label="Предыдущий месяц"></button>
+              <span id="monthLabel" class="month-label">Месяц</span>
+              <button type="button" class="month-nav-button ghost-button" id="nextMonthButton" aria-label="Следующий месяц"></button>
+            </div>
+          </div>
+          <strong id="totalAmount">0.00 UAH</strong>
+          <small id="expenseCount">0 записей</small>
+          <div id="monthlyWeekBreakdown" class="monthly-week-breakdown"></div>
+          <div id="monthlySparkline" class="sparkline sparkline-positive" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <main class="dashboard-grid">
+        <section class="panel analytics-panel">
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">Тренды Расходов</p>
+              <h2>Аналитика расходов</h2>
+              <p>Сводка строится по данным из Cloudflare Worker и локального кеша, как в терминале аналитики.</p>
+            </div>
           </div>
 
           <div class="filters-grid">
@@ -125,54 +191,98 @@
               </select>
             </label>
 
-            <label>
+            <label class="date-field">
               <span>Период от</span>
               <input type="date" id="dateFromFilter" />
+              <span class="date-field-icon" aria-hidden="true"></span>
             </label>
 
-            <label>
+            <label class="date-field">
               <span>Период до</span>
               <input type="date" id="dateToFilter" />
+              <span class="date-field-icon" aria-hidden="true"></span>
             </label>
           </div>
 
           <div class="charts-grid">
-            <div class="chart-card">
-              <h3>По категориям</h3>
-              <canvas id="categoryChart"></canvas>
-            </div>
-            <div class="chart-card">
-              <h3>По получателю</h3>
-              <canvas id="forWhomChart"></canvas>
-            </div>
-            <div class="chart-card chart-card-wide">
-              <h3>По дням</h3>
+            <article class="chart-card chart-card-donut chart-card-category">
+              <div class="chart-card-head">
+                <div>
+                  <p class="chart-kicker">Категории</p>
+                  <h3>По категориям</h3>
+                </div>
+                <span class="chart-pill">AI</span>
+              </div>
+              <div class="chart-canvas-wrap">
+                <canvas id="categoryChart"></canvas>
+              </div>
+            </article>
+
+            <article class="chart-card chart-card-donut chart-card-for-whom">
+              <div class="chart-card-head">
+                <div>
+                  <p class="chart-kicker">Получатели</p>
+                  <h3>По получателю</h3>
+                </div>
+                <span class="chart-pill">Срез</span>
+              </div>
+              <div class="chart-canvas-wrap">
+                <canvas id="forWhomChart"></canvas>
+              </div>
+            </article>
+
+            <article class="chart-card chart-card-timeline">
+              <div class="chart-card-head">
+                <div>
+                  <p class="chart-kicker">Динамика</p>
+                  <h3>По неделе</h3>
+                </div>
+                <div class="chart-week-controls">
+                  <button type="button" class="chart-nav-button ghost-button" id="prevWeekButton" aria-label="Предыдущая неделя"></button>
+                  <span id="weekRangeLabel" class="week-range-label">Неделя</span>
+                  <button type="button" class="chart-nav-button ghost-button" id="nextWeekButton" aria-label="Следующая неделя"></button>
+                </div>
+              </div>
               <canvas id="timelineChart"></canvas>
-            </div>
+            </article>
+
+            <article class="chart-card chart-card-week-meta">
+              <div class="chart-card-head">
+                <div>
+                  <p class="chart-kicker">Неделя</p>
+                  <h3>Сводка</h3>
+                </div>
+                <span class="chart-pill">7 Дней</span>
+              </div>
+              <div id="weekInsight" class="week-insight"></div>
+            </article>
           </div>
         </section>
 
         <section class="panel table-panel">
-          <div class="panel-heading">
-            <h2>История расходов</h2>
-            <p>Таблица показывает нормализованные записи в фиксированной схеме.</p>
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">История Данных</p>
+              <h2>История расходов</h2>
+              <p>Таблица показывает нормализованные записи в фиксированной схеме в аккуратном темном интерфейсе.</p>
+            </div>
           </div>
 
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Дата</th>
-                  <th>Сумма</th>
-                  <th>Кол-во</th>
-                  <th>Описание</th>
-                  <th>Товар</th>
-                  <th>Категория</th>
-                  <th>Подкатегория</th>
-                  <th>Под-подкатегория</th>
-                  <th>Для кого</th>
-                  <th>Заметки</th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="id">№</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="date">Дата</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="amount">Сумма</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="quantity">Кол-во</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="description_raw">Описание</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="product_name">Товар</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="category">Категория</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="sub_category">Подкатегория</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="for_whom">Для кого</button></th>
+                  <th><button type="button" class="table-sort-button" data-sort-key="notes">Заметки</button></th>
+                  <th class="table-actions-head" aria-label="Действия"></th>
                 </tr>
               </thead>
               <tbody id="expensesTableBody"></tbody>
@@ -182,18 +292,20 @@
       </main>
     </div>
 
-    <div id="confirmModal" class="modal hidden" aria-hidden="true">
+        <div id="confirmModal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="true"></div>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
         <div class="modal-header">
-          <h2 id="confirmTitle">Подтверждение траты</h2>
-          <button type="button" class="modal-close" id="closeConfirmModal" aria-label="Закрыть">
-            ×
-          </button>
+          <div>
+            <p class="panel-label" id="confirmEyebrow">Подтверждение Записи</p>
+            <h2 id="confirmTitle">Подтверждение траты</h2>
+          </div>
+          <button type="button" class="modal-close" id="closeConfirmModal" aria-label="Закрыть">×</button>
         </div>
-        <p class="modal-copy">Добавляю трату в категории ниже. Подтвердить сохранение?</p>
+        <p class="modal-copy" id="confirmCopy">Добавляю трату в категории ниже. Проверь данные и подтверди сохранение.</p>
         <div id="confirmDecision" class="confirm-decision"></div>
         <div id="confirmPreview" class="confirm-preview"></div>
+        <button type="button" class="ghost-button edit-button" id="toggleConfirmEditButton">Редактировать вручную</button>
         <div class="modal-actions">
           <button type="button" class="ghost-button" id="cancelConfirmButton">Отмена</button>
           <button type="button" id="confirmSaveButton">Подтвердить</button>
