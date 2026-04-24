@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpendSoul</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module" src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Personal Expense Tracker</p>
+          <h1>SpendSoul</h1>
+          <p class="hero-copy">
+            Личный AI-трекер трат с нормализацией расходов через Cloudflare Workers и OpenAI.
+          </p>
+        </div>
+        <div class="hero-card">
+          <span>Всего трат</span>
+          <strong id="totalAmount">0.00 UAH</strong>
+          <small id="expenseCount">0 записей</small>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel form-panel">
+          <div class="panel-heading">
+            <h2>Новая трата</h2>
+            <p>Введите дату, сумму и описание. Остальное заполнит AI-нормализация.</p>
+          </div>
+
+          <form id="expenseForm" class="expense-form">
+            <label>
+              <span>Дата</span>
+              <input type="date" id="date" name="date" required />
+            </label>
+
+            <label>
+              <span>Сумма</span>
+              <input
+                type="number"
+                id="amount"
+                name="amount"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                required
+              />
+            </label>
+
+            <label class="full-width">
+              <span>Описание</span>
+              <textarea
+                id="description_raw"
+                name="description_raw"
+                rows="4"
+                placeholder="Например: чипсы для Марка"
+                required
+              ></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button type="submit" id="submitButton">Сохранить</button>
+              <button type="button" id="clearLocalButton" class="ghost-button">
+                Очистить localStorage
+              </button>
+            </div>
+
+            <p id="statusMessage" class="status-message" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="panel charts-panel">
+          <div class="panel-heading">
+            <h2>Аналитика</h2>
+            <p>Сводка строится по данным из localStorage.</p>
+          </div>
+
+          <div class="charts-grid">
+            <div class="chart-card">
+              <h3>По категориям</h3>
+              <canvas id="categoryChart"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3>По получателю</h3>
+              <canvas id="forWhomChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-heading">
+            <h2>История расходов</h2>
+            <p>Таблица показывает нормализованные записи в фиксированной схеме.</p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Дата</th>
+                  <th>Сумма</th>
+                  <th>Описание</th>
+                  <th>Товар</th>
+                  <th>Категория</th>
+                  <th>Подкатегория</th>
+                  <th>Под-подкатегория</th>
+                  <th>Для кого</th>
+                  <th>Заметки</th>
+                </tr>
+              </thead>
+              <tbody id="expensesTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
