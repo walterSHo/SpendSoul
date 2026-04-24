@@ -12,7 +12,7 @@ const ALLOWED_FOR_WHOM = new Set([
 
 const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
 };
 
@@ -41,6 +41,11 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/crypto-assets") {
         const cryptoAssets = await loadCryptoAssets(env);
         return jsonResponse(cryptoAssets);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/recurring-expenses") {
+        const recurringExpenses = await loadRecurringExpenses(env);
+        return jsonResponse(recurringExpenses);
       }
 
       if (request.method === "GET" && url.pathname === "/api/crypto-prices") {
@@ -96,6 +101,53 @@ export default {
 
         await saveCryptoAsset(env, sanitizedCryptoAsset);
         return jsonResponse(sanitizedCryptoAsset, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/add-recurring-expense") {
+        const body = await request.json();
+        validateRecurringExpensePayload(body);
+
+        const nextId = Number(body?.id) || (await getNextRecurringExpenseId(env));
+        const sanitizedRecurringExpense = sanitizeRecurringExpense(body, nextId);
+
+        await saveRecurringExpense(env, sanitizedRecurringExpense);
+        return jsonResponse(sanitizedRecurringExpense, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/materialize-recurring-expenses") {
+        const body = await request.json();
+        const generatedExpenses = await materializeRecurringExpenses(env, body);
+        return jsonResponse(generatedExpenses, 201);
+      }
+
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/expenses/")) {
+        const id = parsePathId(url.pathname, "/api/expenses/");
+        await deleteExpense(env, id);
+        return jsonResponse({ ok: true, id });
+      }
+
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/incomes/")) {
+        const id = parsePathId(url.pathname, "/api/incomes/");
+        await deleteIncome(env, id);
+        return jsonResponse({ ok: true, id });
+      }
+
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/crypto-assets/")) {
+        const id = parsePathId(url.pathname, "/api/crypto-assets/");
+        await deleteCryptoAsset(env, id);
+        return jsonResponse({ ok: true, id });
+      }
+
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/recurring-expenses/")) {
+        const id = parsePathId(url.pathname, "/api/recurring-expenses/");
+        await deleteRecurringExpense(env, id);
+        return jsonResponse({ ok: true, id });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/reset-data") {
+        validateAdminRequest(request, env);
+        await resetAllData(env);
+        return jsonResponse({ ok: true });
       }
 
       return jsonResponse({ error: "Not found" }, 404);
@@ -164,6 +216,24 @@ function validateCryptoAssetPayload(body) {
   }
 }
 
+function validateRecurringExpensePayload(body) {
+  if (!body || typeof body !== "object") {
+    throw new RequestValidationError("Body must be a JSON object.");
+  }
+
+  if (!body.description_raw || !body.start_date) {
+    throw new RequestValidationError("description_raw and start_date are required.");
+  }
+
+  if (typeof body.amount !== "number" || Number.isNaN(body.amount) || body.amount <= 0) {
+    throw new RequestValidationError("amount must be a positive number.");
+  }
+
+  if (!["monthly", "weekly"].includes(String(body.frequency || "monthly"))) {
+    throw new RequestValidationError("frequency must be monthly or weekly.");
+  }
+}
+
 async function loadExpenses(env) {
   if (!env.EXPENSES_KV) {
     return [];
@@ -188,6 +258,10 @@ async function loadIncomes(env) {
 
 async function loadCryptoAssets(env) {
   return loadJsonArray(env, "crypto_assets");
+}
+
+async function loadRecurringExpenses(env) {
+  return loadJsonArray(env, "recurring_expenses");
 }
 
 async function loadJsonArray(env, key) {
@@ -241,6 +315,45 @@ async function saveCryptoAsset(env, cryptoAsset) {
   await env.EXPENSES_KV.put("crypto_assets", JSON.stringify(nextCryptoAssets));
 }
 
+async function saveRecurringExpense(env, recurringExpense) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  const currentRecurringExpenses = await loadRecurringExpenses(env);
+  const nextRecurringExpenses = currentRecurringExpenses.filter((item) => Number(item?.id) !== Number(recurringExpense?.id));
+  nextRecurringExpenses.push(recurringExpense);
+  await env.EXPENSES_KV.put("recurring_expenses", JSON.stringify(nextRecurringExpenses));
+}
+
+async function deleteExpense(env, id) {
+  const currentExpenses = await loadExpenses(env);
+  await putJsonArray(env, "expenses", currentExpenses.filter((item) => Number(item?.id) !== Number(id)));
+}
+
+async function deleteIncome(env, id) {
+  const currentIncomes = await loadIncomes(env);
+  await putJsonArray(env, "incomes", currentIncomes.filter((item) => Number(item?.id) !== Number(id)));
+}
+
+async function deleteCryptoAsset(env, id) {
+  const currentCryptoAssets = await loadCryptoAssets(env);
+  await putJsonArray(env, "crypto_assets", currentCryptoAssets.filter((item) => Number(item?.id) !== Number(id)));
+}
+
+async function deleteRecurringExpense(env, id) {
+  const currentRecurringExpenses = await loadRecurringExpenses(env);
+  await putJsonArray(env, "recurring_expenses", currentRecurringExpenses.filter((item) => Number(item?.id) !== Number(id)));
+}
+
+async function putJsonArray(env, key, value) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  await env.EXPENSES_KV.put(key, JSON.stringify(Array.isArray(value) ? value : []));
+}
+
 async function getNextExpenseId(env) {
   const expenses = await loadExpenses(env);
   const maxId = expenses.reduce((max, item) => {
@@ -264,6 +377,16 @@ async function getNextIncomeId(env) {
 async function getNextCryptoAssetId(env) {
   const cryptoAssets = await loadCryptoAssets(env);
   const maxId = cryptoAssets.reduce((max, item) => {
+    const numericId = Number(item.id) || 0;
+    return Math.max(max, numericId);
+  }, 0);
+
+  return maxId + 1;
+}
+
+async function getNextRecurringExpenseId(env) {
+  const recurringExpenses = await loadRecurringExpenses(env);
+  const maxId = recurringExpenses.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
@@ -504,6 +627,113 @@ function sanitizeCryptoAsset(cryptoAsset, nextId) {
   };
 }
 
+function sanitizeRecurringExpense(recurringExpense, nextId) {
+  const frequency = String(recurringExpense?.frequency || "monthly").trim();
+
+  return {
+    id: Number(recurringExpense?.id) || nextId,
+    start_date: String(recurringExpense?.start_date || ""),
+    amount: Number((Number(recurringExpense?.amount) || 0).toFixed(2)),
+    currency: String(recurringExpense?.currency || "UAH"),
+    description_raw: String(recurringExpense?.description_raw || "").trim(),
+    category: String(recurringExpense?.category || "регулярные").trim(),
+    sub_category: String(recurringExpense?.sub_category || "подписки").trim(),
+    for_whom: ALLOWED_FOR_WHOM.has(String(recurringExpense?.for_whom || "")) ? String(recurringExpense?.for_whom) : "myself",
+    frequency: frequency === "weekly" ? "weekly" : "monthly",
+    notes: String(recurringExpense?.notes || ""),
+    active: recurringExpense?.active !== false,
+    last_materialized_at: String(recurringExpense?.last_materialized_at || ""),
+  };
+}
+
+async function materializeRecurringExpenses(env, body) {
+  const targetDate = String(body?.date || new Date().toISOString().slice(0, 10));
+  const recurringExpenses = (await loadRecurringExpenses(env)).map((item) => sanitizeRecurringExpense(item, item?.id));
+  const currentExpenses = await loadExpenses(env);
+  let nextId = await getNextExpenseId(env);
+  const generatedExpenses = [];
+  const updatedRecurringExpenses = [];
+
+  for (const recurringExpense of recurringExpenses) {
+    if (!recurringExpense.active || !isRecurringDue(recurringExpense, targetDate)) {
+      updatedRecurringExpenses.push(recurringExpense);
+      continue;
+    }
+
+    const periodKey = getRecurringPeriodKey(recurringExpense.frequency, targetDate);
+    const alreadyExists = currentExpenses.some((expense) => expense?.recurring_id === recurringExpense.id && expense?.recurring_period === periodKey);
+
+    if (!alreadyExists) {
+      const generatedExpense = sanitizeExpense(
+        {
+          id: nextId,
+          date: targetDate,
+          amount: recurringExpense.amount,
+          quantity: 1,
+          currency: recurringExpense.currency,
+          description_raw: recurringExpense.description_raw,
+          product_name: recurringExpense.description_raw,
+          category: recurringExpense.category,
+          sub_category: recurringExpense.sub_category,
+          sub_sub_category: "регулярно",
+          for_whom: recurringExpense.for_whom,
+          notes: recurringExpense.notes,
+          ai_hint: "Автоматически создано из регулярной траты",
+          recurring_id: recurringExpense.id,
+          recurring_period: periodKey,
+        },
+        nextId,
+        {
+          date: targetDate,
+          amount: recurringExpense.amount,
+          quantity: 1,
+          description_raw: recurringExpense.description_raw,
+          notes: recurringExpense.notes,
+          ai_hint: "Автоматически создано из регулярной траты",
+        },
+      );
+
+      generatedExpense.recurring_id = recurringExpense.id;
+      generatedExpense.recurring_period = periodKey;
+      generatedExpenses.push(generatedExpense);
+      currentExpenses.push(generatedExpense);
+      nextId += 1;
+    }
+
+    updatedRecurringExpenses.push({
+      ...recurringExpense,
+      last_materialized_at: new Date().toISOString(),
+    });
+  }
+
+  if (generatedExpenses.length) {
+    await putJsonArray(env, "expenses", currentExpenses);
+  }
+  await putJsonArray(env, "recurring_expenses", updatedRecurringExpenses);
+
+  return generatedExpenses;
+}
+
+function isRecurringDue(recurringExpense, targetDate) {
+  if (!recurringExpense.start_date || recurringExpense.start_date > targetDate) {
+    return false;
+  }
+
+  return true;
+}
+
+function getRecurringPeriodKey(frequency, dateValue) {
+  if (frequency === "weekly") {
+    const date = new Date(`${dateValue}T00:00:00`);
+    const start = new Date(date);
+    const day = start.getDay() || 7;
+    start.setDate(start.getDate() - day + 1);
+    return start.toISOString().slice(0, 10);
+  }
+
+  return String(dateValue).slice(0, 7);
+}
+
 function parseCryptoPriceIds(url) {
   const rawIds = String(url.searchParams.get("ids") || "");
   const ids = rawIds
@@ -547,6 +777,35 @@ function jsonResponse(payload, status = 200) {
       ...DEFAULT_CORS_HEADERS,
     },
   });
+}
+
+function parsePathId(pathname, prefix) {
+  const id = Number(String(pathname).slice(prefix.length));
+  if (!Number.isInteger(id) || id < 1) {
+    throw new RequestValidationError("Valid id is required.");
+  }
+
+  return id;
+}
+
+function validateAdminRequest(request, env) {
+  if (!env.ADMIN_TOKEN) {
+    throw new RequestValidationError("ADMIN_TOKEN is not configured.");
+  }
+
+  const expectedHeader = `Bearer ${env.ADMIN_TOKEN}`;
+  if (request.headers.get("Authorization") !== expectedHeader) {
+    throw new RequestValidationError("Admin authorization is required.");
+  }
+}
+
+async function resetAllData(env) {
+  await Promise.all([
+    putJsonArray(env, "expenses", []),
+    putJsonArray(env, "incomes", []),
+    putJsonArray(env, "crypto_assets", []),
+    putJsonArray(env, "recurring_expenses", []),
+  ]);
 }
 
 function cleanJsonText(value) {

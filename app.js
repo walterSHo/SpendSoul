@@ -1,6 +1,7 @@
 const STORAGE_KEY = "spendsoul-expenses";
 const INCOME_STORAGE_KEY = "spendsoul-incomes";
 const CRYPTO_STORAGE_KEY = "spendsoul-crypto-assets";
+const RECURRING_STORAGE_KEY = "spendsoul-recurring-expenses";
 const WORKER_BASE_URL = "https://spendsoul-api.waltershcroder.workers.dev";
 const ALLOWED_FOR_WHOM = new Set([
   "myself",
@@ -36,6 +37,7 @@ const notesInput = document.querySelector("#notes");
 const aiHintInput = document.querySelector("#ai_hint");
 const submitButton = document.querySelector("#submitButton");
 const clearLocalButton = document.querySelector("#clearLocalButton");
+const resetServerButton = document.querySelector("#resetServerButton");
 const statusMessage = document.querySelector("#statusMessage");
 const tableBody = document.querySelector("#expensesTableBody");
 const totalAmountNode = document.querySelector("#totalAmount");
@@ -98,6 +100,25 @@ const cryptoProfitValue = document.querySelector("#cryptoProfitValue");
 const cryptoReturnPercent = document.querySelector("#cryptoReturnPercent");
 const cryptoPriceStatus = document.querySelector("#cryptoPriceStatus");
 const cryptoTableBody = document.querySelector("#cryptoTableBody");
+const recurringView = document.querySelector("#recurringView");
+const recurringForm = document.querySelector("#recurringForm");
+const recurringStartDateInput = document.querySelector("#recurringStartDate");
+const recurringAmountInput = document.querySelector("#recurringAmount");
+const recurringFrequencyInput = document.querySelector("#recurringFrequency");
+const recurringForWhomInput = document.querySelector("#recurringForWhom");
+const recurringDescriptionInput = document.querySelector("#recurringDescription");
+const recurringCategoryInput = document.querySelector("#recurringCategory");
+const recurringSubCategoryInput = document.querySelector("#recurringSubCategory");
+const recurringNotesInput = document.querySelector("#recurringNotes");
+const recurringSubmitButton = document.querySelector("#recurringSubmitButton");
+const materializeRecurringButton = document.querySelector("#materializeRecurringButton");
+const recurringStatusMessage = document.querySelector("#recurringStatusMessage");
+const recurringMonthlyAmount = document.querySelector("#recurringMonthlyAmount");
+const recurringCount = document.querySelector("#recurringCount");
+const recurringTableBody = document.querySelector("#recurringTableBody");
+const expenseSearchInput = document.querySelector("#expenseSearchInput");
+const syncBanner = document.querySelector("#syncBanner");
+const quickAddButton = document.querySelector("#quickAddButton");
 
 let categoryChart;
 let forWhomChart;
@@ -105,11 +126,16 @@ let timelineChart;
 let expenses = loadExpenses();
 let incomes = loadIncomes();
 let cryptoAssets = loadCryptoAssets();
+let recurringExpenses = loadRecurringExpenses();
 let cryptoPrices = {};
 let filteredExpenses = [...expenses];
+let isOfflineMode = false;
 let pendingExpense = null;
 let pendingDecision = null;
 let pendingMode = "create";
+let editingIncomeId = null;
+let editingCryptoAssetId = null;
+let editingRecurringExpenseId = null;
 let confirmEditorOpen = false;
 let currentSort = { key: "date", direction: "desc" };
 let visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
@@ -118,22 +144,31 @@ const customSelects = new WeakMap();
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 incomeDateInput.value = new Date().toISOString().slice(0, 10);
+recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
 syncExpensesOnLoad();
 render();
 
 form.addEventListener("submit", handleSubmit);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
 cryptoForm.addEventListener("submit", handleCryptoSubmit);
+recurringForm.addEventListener("submit", handleRecurringSubmit);
 clearLocalButton.addEventListener("click", handleClearLocalStorage);
+resetServerButton.addEventListener("click", handleResetServerData);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
+materializeRecurringButton.addEventListener("click", handleMaterializeRecurring);
+quickAddButton.addEventListener("click", handleQuickAdd);
 quantityDownButton.addEventListener("click", () => adjustQuantity(-1));
 quantityUpButton.addEventListener("click", () => adjustQuantity(1));
 categoryFilter.addEventListener("change", handleFiltersChange);
 forWhomFilter.addEventListener("change", handleFiltersChange);
 dateFromFilter.addEventListener("change", handleFiltersChange);
 dateToFilter.addEventListener("change", handleFiltersChange);
+expenseSearchInput.addEventListener("input", handleFiltersChange);
 tableSortButtons.forEach((button) => button.addEventListener("click", handleSortChange));
 tableBody.addEventListener("click", handleTableBodyClick);
+incomesTableBody.addEventListener("click", handleIncomeTableClick);
+cryptoTableBody.addEventListener("click", handleCryptoTableClick);
+recurringTableBody.addEventListener("click", handleRecurringTableClick);
 prevWeekButton.addEventListener("click", () => shiftVisibleWeek(-1));
 nextWeekButton.addEventListener("click", () => shiftVisibleWeek(1));
 prevMonthButton.addEventListener("click", () => shiftVisibleMonth(-1));
@@ -146,7 +181,7 @@ confirmModal.addEventListener("click", handleConfirmBackdrop);
 viewTabs.forEach((button) => button.addEventListener("click", handleViewTabClick));
 document.addEventListener("click", handleDocumentClick);
 
-[dateInput, incomeDateInput, dateFromFilter, dateToFilter].forEach(bindNativeDatePicker);
+[dateInput, incomeDateInput, dateFromFilter, dateToFilter, recurringStartDateInput].forEach(bindNativeDatePicker);
 initializeCustomSelects();
 
 async function handleSubmit(event) {
@@ -193,6 +228,7 @@ async function handleIncomeSubmit(event) {
   event.preventDefault();
 
   const payload = {
+    id: editingIncomeId,
     date: incomeDateInput.value,
     amount: Number(incomeAmountInput.value),
     currency: "UAH",
@@ -215,6 +251,7 @@ async function handleIncomeSubmit(event) {
     persistIncomes(incomes);
     renderIncomeView();
     incomeForm.reset();
+    editingIncomeId = null;
     incomeDateInput.value = new Date().toISOString().slice(0, 10);
     setIncomeStatus("Доход сохранен.");
   } catch (error) {
@@ -229,6 +266,7 @@ async function handleCryptoSubmit(event) {
 
   const selectedCoin = parseCryptoCoinValue(cryptoCoinInput.value);
   const payload = {
+    id: editingCryptoAssetId,
     ...selectedCoin,
     amount_held: Number(cryptoAmountHeldInput.value),
     invested_amount: Number(cryptoInvestedAmountInput.value),
@@ -258,6 +296,7 @@ async function handleCryptoSubmit(event) {
     cryptoAssets = upsertCryptoAsset(cryptoAssets, savedCryptoAsset);
     persistCryptoAssets(cryptoAssets);
     cryptoForm.reset();
+    editingCryptoAssetId = null;
     updateCustomSelect(cryptoCoinInput);
     renderCryptoView();
     await refreshCryptoPrices();
@@ -269,13 +308,79 @@ async function handleCryptoSubmit(event) {
   }
 }
 
+async function handleRecurringSubmit(event) {
+  event.preventDefault();
+
+  const payload = {
+    id: editingRecurringExpenseId,
+    start_date: recurringStartDateInput.value,
+    amount: Number(recurringAmountInput.value),
+    description_raw: recurringDescriptionInput.value.trim(),
+    category: recurringCategoryInput.value.trim() || "регулярные",
+    sub_category: recurringSubCategoryInput.value.trim() || "подписки",
+    for_whom: recurringForWhomInput.value,
+    frequency: recurringFrequencyInput.value,
+    notes: recurringNotesInput.value.trim(),
+    active: true,
+  };
+
+  if (!payload.start_date || !payload.description_raw || Number.isNaN(payload.amount) || payload.amount <= 0) {
+    setRecurringStatus("Заполните старт, сумму и описание.", true);
+    return;
+  }
+
+  setRecurringLoading(true);
+  setRecurringStatus("Сохраняю регулярную трату...");
+
+  try {
+    const savedRecurringExpense = await createRecurringExpense(payload);
+    recurringExpenses = upsertRecurringExpense(recurringExpenses, savedRecurringExpense);
+    persistRecurringExpenses(recurringExpenses);
+    recurringForm.reset();
+    editingRecurringExpenseId = null;
+    recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
+    updateCustomSelect(recurringFrequencyInput);
+    updateCustomSelect(recurringForWhomInput);
+    renderRecurringView();
+    setRecurringStatus("Регулярная трата сохранена.");
+  } catch (error) {
+    setRecurringStatus(error.message || "Не удалось сохранить регулярную трату.", true);
+  } finally {
+    setRecurringLoading(false);
+  }
+}
+
+async function handleMaterializeRecurring() {
+  materializeRecurringButton.disabled = true;
+  setRecurringStatus("Создаю расходы за текущий период...");
+
+  try {
+    const generatedExpenses = await materializeRecurringExpenses();
+    if (generatedExpenses.length) {
+      expenses = mergeExpenses(generatedExpenses, expenses);
+      persistExpenses(expenses);
+      syncFilterOptions();
+      render();
+      setRecurringStatus(`Создано регулярных расходов: ${generatedExpenses.length}.`);
+    } else {
+      setRecurringStatus("За текущий период новых регулярных расходов нет.");
+    }
+  } catch (error) {
+    setRecurringStatus(error.message || "Не удалось создать регулярные расходы.", true);
+  } finally {
+    materializeRecurringButton.disabled = false;
+  }
+}
+
 function handleClearLocalStorage() {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(INCOME_STORAGE_KEY);
   localStorage.removeItem(CRYPTO_STORAGE_KEY);
+  localStorage.removeItem(RECURRING_STORAGE_KEY);
   expenses = [];
   incomes = [];
   cryptoAssets = [];
+  recurringExpenses = [];
   cryptoPrices = {};
   visibleWeekStart = getStartOfWeek(new Date());
   visibleMonthDate = getStartOfMonth(new Date());
@@ -284,17 +389,61 @@ function handleClearLocalStorage() {
   setStatus("Локальный кеш очищен.");
   setIncomeStatus("Локальный кеш очищен.");
   setCryptoStatus("Локальный кеш очищен.");
+  setRecurringStatus("Локальный кеш очищен.");
+}
+
+async function handleResetServerData() {
+  const adminToken = prompt("ADMIN_TOKEN для полного сброса серверных данных");
+  if (!adminToken) {
+    return;
+  }
+
+  if (!confirm("Удалить все расходы, доходы, крипто позиции и регулярные правила на сервере?")) {
+    return;
+  }
+
+  resetServerButton.disabled = true;
+  setSyncState("loading", "Сбрасываю серверные данные...");
+
+  try {
+    await resetServerData(adminToken.trim());
+    handleClearLocalStorage();
+    setSyncState("online", "Серверные данные очищены");
+    setStatus("Серверные данные очищены.");
+  } catch (error) {
+    setSyncState("offline", "Сброс сервера не выполнен");
+    setStatus(error.message || "Не удалось сбросить серверные данные.", true);
+  } finally {
+    resetServerButton.disabled = false;
+  }
 }
 
 function handleViewTabClick(event) {
   const target = event.currentTarget.dataset.viewTarget;
   const isIncomeView = target === "incomes";
   const isCryptoView = target === "crypto";
+  const isRecurringView = target === "recurring";
 
-  expensesView.classList.toggle("hidden", isIncomeView || isCryptoView);
+  expensesView.classList.toggle("hidden", isIncomeView || isCryptoView || isRecurringView);
   incomesView.classList.toggle("hidden", !isIncomeView);
   cryptoView.classList.toggle("hidden", !isCryptoView);
+  recurringView.classList.toggle("hidden", !isRecurringView);
   viewTabs.forEach((button) => button.classList.toggle("active", button.dataset.viewTarget === target));
+}
+
+function handleQuickAdd() {
+  const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "expenses";
+  const targetNode =
+    activeTarget === "incomes"
+      ? incomeForm
+      : activeTarget === "crypto"
+        ? cryptoForm
+        : activeTarget === "recurring"
+          ? recurringForm
+          : form;
+
+  targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
+  targetNode.querySelector("input, textarea, select")?.focus({ preventScroll: true });
 }
 
 function handleDocumentClick(event) {
@@ -407,6 +556,12 @@ function handleSortChange(event) {
 }
 
 function handleTableBodyClick(event) {
+  const deleteButton = event.target.closest("[data-delete-expense-id]");
+  if (deleteButton) {
+    deleteExpenseById(Number(deleteButton.dataset.deleteExpenseId));
+    return;
+  }
+
   const editButton = event.target.closest("[data-edit-expense-id]");
   if (!editButton) {
     return;
@@ -424,6 +579,159 @@ function handleTableBodyClick(event) {
   pendingDecision = buildEditDecision(expense);
   openConfirmDialog(pendingExpense, pendingDecision);
   setStatus("Открыл запись из истории для редактирования.");
+}
+
+function handleIncomeTableClick(event) {
+  const deleteButton = event.target.closest("[data-delete-income-id]");
+  if (deleteButton) {
+    deleteIncomeById(Number(deleteButton.dataset.deleteIncomeId));
+    return;
+  }
+
+  const editButton = event.target.closest("[data-edit-income-id]");
+  if (!editButton) {
+    return;
+  }
+
+  const income = incomes.find((item) => item.id === Number(editButton.dataset.editIncomeId));
+  if (!income) {
+    setIncomeStatus("Не удалось найти доход.", true);
+    return;
+  }
+
+  incomeDateInput.value = income.date;
+  editingIncomeId = income.id;
+  incomeAmountInput.value = String(income.amount);
+  incomeSourceInput.value = income.source;
+  incomeNotesInput.value = income.notes;
+  incomeSourceInput.focus();
+  setIncomeStatus("Доход загружен в форму. Сохранение обновит запись.");
+}
+
+function handleCryptoTableClick(event) {
+  const deleteButton = event.target.closest("[data-delete-crypto-id]");
+  if (deleteButton) {
+    deleteCryptoAssetById(Number(deleteButton.dataset.deleteCryptoId));
+    return;
+  }
+
+  const editButton = event.target.closest("[data-edit-crypto-id]");
+  if (!editButton) {
+    return;
+  }
+
+  const asset = cryptoAssets.find((item) => item.id === Number(editButton.dataset.editCryptoId));
+  if (!asset) {
+    setCryptoStatus("Не удалось найти позицию.", true);
+    return;
+  }
+
+  cryptoCoinInput.value = `${asset.coingecko_id}|${asset.symbol}|${asset.name}`;
+  editingCryptoAssetId = asset.id;
+  cryptoAmountHeldInput.value = String(asset.amount_held);
+  cryptoInvestedAmountInput.value = String(asset.invested_amount);
+  cryptoNotesInput.value = asset.notes;
+  updateCustomSelect(cryptoCoinInput);
+  cryptoAmountHeldInput.focus();
+  setCryptoStatus("Позиция загружена в форму. Сохранение обновит запись.");
+}
+
+function handleRecurringTableClick(event) {
+  const deleteButton = event.target.closest("[data-delete-recurring-id]");
+  if (deleteButton) {
+    deleteRecurringExpenseById(Number(deleteButton.dataset.deleteRecurringId));
+    return;
+  }
+
+  const editButton = event.target.closest("[data-edit-recurring-id]");
+  if (!editButton) {
+    return;
+  }
+
+  const recurringExpense = recurringExpenses.find((item) => item.id === Number(editButton.dataset.editRecurringId));
+  if (!recurringExpense) {
+    setRecurringStatus("Не удалось найти регулярную трату.", true);
+    return;
+  }
+
+  recurringStartDateInput.value = recurringExpense.start_date;
+  editingRecurringExpenseId = recurringExpense.id;
+  recurringAmountInput.value = String(recurringExpense.amount);
+  recurringFrequencyInput.value = recurringExpense.frequency;
+  recurringForWhomInput.value = recurringExpense.for_whom;
+  recurringDescriptionInput.value = recurringExpense.description_raw;
+  recurringCategoryInput.value = recurringExpense.category;
+  recurringSubCategoryInput.value = recurringExpense.sub_category;
+  recurringNotesInput.value = recurringExpense.notes;
+  updateCustomSelect(recurringFrequencyInput);
+  updateCustomSelect(recurringForWhomInput);
+  recurringDescriptionInput.focus();
+  setRecurringStatus("Регулярная трата загружена в форму. Сохранение обновит правило.");
+}
+
+async function deleteExpenseById(id) {
+  if (!Number.isFinite(id) || !confirm("Удалить эту трату?")) {
+    return;
+  }
+
+  try {
+    await deleteServerItem("expenses", id);
+    expenses = expenses.filter((item) => item.id !== id);
+    persistExpenses(expenses);
+    syncFilterOptions();
+    render();
+    setStatus("Трата удалена.");
+  } catch (error) {
+    setStatus(error.message || "Не удалось удалить трату.", true);
+  }
+}
+
+async function deleteIncomeById(id) {
+  if (!Number.isFinite(id) || !confirm("Удалить этот доход?")) {
+    return;
+  }
+
+  try {
+    await deleteServerItem("incomes", id);
+    incomes = incomes.filter((item) => item.id !== id);
+    persistIncomes(incomes);
+    renderIncomeView();
+    setIncomeStatus("Доход удален.");
+  } catch (error) {
+    setIncomeStatus(error.message || "Не удалось удалить доход.", true);
+  }
+}
+
+async function deleteCryptoAssetById(id) {
+  if (!Number.isFinite(id) || !confirm("Удалить эту крипто позицию?")) {
+    return;
+  }
+
+  try {
+    await deleteServerItem("crypto-assets", id);
+    cryptoAssets = cryptoAssets.filter((item) => item.id !== id);
+    persistCryptoAssets(cryptoAssets);
+    renderCryptoView();
+    setCryptoStatus("Позиция удалена.");
+  } catch (error) {
+    setCryptoStatus(error.message || "Не удалось удалить позицию.", true);
+  }
+}
+
+async function deleteRecurringExpenseById(id) {
+  if (!Number.isFinite(id) || !confirm("Удалить эту регулярную трату?")) {
+    return;
+  }
+
+  try {
+    await deleteServerItem("recurring-expenses", id);
+    recurringExpenses = recurringExpenses.filter((item) => item.id !== id);
+    persistRecurringExpenses(recurringExpenses);
+    renderRecurringView();
+    setRecurringStatus("Регулярная трата удалена.");
+  } catch (error) {
+    setRecurringStatus(error.message || "Не удалось удалить регулярную трату.", true);
+  }
 }
 
 function shiftVisibleWeek(offset) {
@@ -511,6 +819,93 @@ async function createCryptoAsset(payload) {
   return sanitizeCryptoAsset(data);
 }
 
+async function createRecurringExpense(payload) {
+  const response = await fetch(`${WORKER_BASE_URL}/api/add-recurring-expense`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Ошибка сервера.");
+  }
+
+  return sanitizeRecurringExpense(data);
+}
+
+async function deleteServerItem(resource, id) {
+  const response = await fetch(`${WORKER_BASE_URL}/api/${resource}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось удалить запись.");
+  }
+
+  return data;
+}
+
+async function materializeRecurringExpenses() {
+  const response = await fetch(`${WORKER_BASE_URL}/api/materialize-recurring-expenses`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ date: new Date().toISOString().slice(0, 10) }),
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok || !Array.isArray(data)) {
+    throw new Error(data?.error || "Не удалось создать регулярные траты.");
+  }
+
+  return data.map(sanitizeExpense);
+}
+
+async function resetServerData(adminToken) {
+  const response = await fetch(`${WORKER_BASE_URL}/api/reset-data`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+    },
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось сбросить серверные данные.");
+  }
+
+  return data;
+}
+
 async function normalizeExpense(payload) {
   const response = await fetch(`${WORKER_BASE_URL}/api/normalize-expense`, {
     method: "POST",
@@ -588,6 +983,23 @@ async function fetchCryptoAssets() {
   return data.map(sanitizeCryptoAsset).sort(sortByDateDesc);
 }
 
+async function fetchRecurringExpenses() {
+  const response = await fetch(`${WORKER_BASE_URL}/api/recurring-expenses`);
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Не удалось прочитать список регулярных расходов с сервера.");
+  }
+
+  if (!response.ok || !Array.isArray(data)) {
+    throw new Error(data?.error || "Не удалось загрузить регулярные расходы с сервера.");
+  }
+
+  return data.map(sanitizeRecurringExpense).sort(sortByStartDateDesc);
+}
+
 async function fetchCryptoPrices(ids) {
   if (!ids.length) {
     return {};
@@ -610,50 +1022,59 @@ async function fetchCryptoPrices(ids) {
 }
 
 async function syncExpensesOnLoad() {
+  setSyncState("loading", "Синхронизация с сервером...");
   setStatus("Загружаю данные с сервера...");
   setIncomeStatus("Загружаю доходы с сервера...");
   setCryptoStatus("Загружаю крипто портфель...");
+  setRecurringStatus("Загружаю регулярные расходы...");
 
-  const [expenseSyncResult, incomeSyncResult, cryptoSyncResult] = await Promise.allSettled([
+  const [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult] = await Promise.allSettled([
     fetchExpenses(),
     fetchIncomes(),
     fetchCryptoAssets(),
+    fetchRecurringExpenses(),
   ]);
+  const syncResults = [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult];
+  const failedSyncCount = syncResults.filter((result) => result.status === "rejected").length;
+  isOfflineMode = failedSyncCount > 0;
 
   if (expenseSyncResult.status === "fulfilled") {
-    if (expenseSyncResult.value.length > 0 || expenses.length === 0) {
-      expenses = mergeExpenses(expenseSyncResult.value, expenses);
-      persistExpenses(expenses);
-    }
+    expenses = expenseSyncResult.value;
+    persistExpenses(expenses);
     setStatus("Данные синхронизированы.");
   } else {
     setStatus(expenseSyncResult.reason?.message || "Не удалось синхронизировать данные, использую локальный кеш.", true);
   }
 
   if (incomeSyncResult.status === "fulfilled") {
-    if (incomeSyncResult.value.length > 0 || incomes.length === 0) {
-      incomes = mergeIncomes(incomeSyncResult.value, incomes);
-      persistIncomes(incomes);
-    }
+    incomes = incomeSyncResult.value;
+    persistIncomes(incomes);
     setIncomeStatus("Доходы синхронизированы.");
   } else {
     setIncomeStatus(incomeSyncResult.reason?.message || "Не удалось синхронизировать доходы, использую локальный кеш.", true);
   }
 
   if (cryptoSyncResult.status === "fulfilled") {
-    if (cryptoSyncResult.value.length > 0 || cryptoAssets.length === 0) {
-      cryptoAssets = mergeCryptoAssets(cryptoSyncResult.value, cryptoAssets);
-      persistCryptoAssets(cryptoAssets);
-    }
+    cryptoAssets = cryptoSyncResult.value;
+    persistCryptoAssets(cryptoAssets);
     setCryptoStatus("Крипто портфель синхронизирован.");
   } else {
     setCryptoStatus(cryptoSyncResult.reason?.message || "Не удалось синхронизировать крипто портфель.", true);
+  }
+
+  if (recurringSyncResult.status === "fulfilled") {
+    recurringExpenses = recurringSyncResult.value;
+    persistRecurringExpenses(recurringExpenses);
+    setRecurringStatus("Регулярные расходы синхронизированы.");
+  } else {
+    setRecurringStatus(recurringSyncResult.reason?.message || "Не удалось синхронизировать регулярные расходы.", true);
   }
 
   visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
   visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
   syncFilterOptions();
   render();
+  setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Offline mode: показываю локальный кеш" : "Сервер подключен, данные актуальны");
   refreshCryptoPrices();
 }
 
@@ -711,6 +1132,24 @@ function loadCryptoAssets() {
   }
 }
 
+function loadRecurringExpenses() {
+  try {
+    const raw = localStorage.getItem(RECURRING_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map(sanitizeRecurringExpense).sort(sortByStartDateDesc);
+  } catch {
+    return [];
+  }
+}
+
 function persistExpenses(nextExpenses) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(nextExpenses));
 }
@@ -721,6 +1160,10 @@ function persistIncomes(nextIncomes) {
 
 function persistCryptoAssets(nextCryptoAssets) {
   localStorage.setItem(CRYPTO_STORAGE_KEY, JSON.stringify(nextCryptoAssets));
+}
+
+function persistRecurringExpenses(nextRecurringExpenses) {
+  localStorage.setItem(RECURRING_STORAGE_KEY, JSON.stringify(nextRecurringExpenses));
 }
 
 function upsertExpense(currentExpenses, incomingExpense) {
@@ -736,6 +1179,11 @@ function upsertIncome(currentIncomes, incomingIncome) {
 function upsertCryptoAsset(currentCryptoAssets, incomingCryptoAsset) {
   const withoutCurrent = currentCryptoAssets.filter((item) => item.id !== incomingCryptoAsset.id);
   return [...withoutCurrent, incomingCryptoAsset].sort(sortByDateDesc);
+}
+
+function upsertRecurringExpense(currentRecurringExpenses, incomingRecurringExpense) {
+  const withoutCurrent = currentRecurringExpenses.filter((item) => item.id !== incomingRecurringExpense.id);
+  return [...withoutCurrent, incomingRecurringExpense].sort(sortByStartDateDesc);
 }
 
 function mergeExpenses(primaryExpenses, fallbackExpenses) {
@@ -769,6 +1217,16 @@ function mergeCryptoAssets(primaryCryptoAssets, fallbackCryptoAssets) {
   }
 
   return [...merged.values()].sort(sortByDateDesc);
+}
+
+function mergeRecurringExpenses(primaryRecurringExpenses, fallbackRecurringExpenses) {
+  const merged = new Map();
+  for (const recurringExpense of [...fallbackRecurringExpenses, ...primaryRecurringExpenses]) {
+    const safeRecurringExpense = sanitizeRecurringExpense(recurringExpense);
+    merged.set(safeRecurringExpense.id, safeRecurringExpense);
+  }
+
+  return [...merged.values()].sort(sortByStartDateDesc);
 }
 
 function sanitizeExpense(expense) {
@@ -820,8 +1278,38 @@ function sanitizeCryptoAsset(cryptoAsset) {
   };
 }
 
+function sanitizeRecurringExpense(recurringExpense) {
+  const safeRecurringExpense = recurringExpense || {};
+  const frequency = String(safeRecurringExpense.frequency || "monthly");
+
+  return {
+    id: Number(safeRecurringExpense.id) || Date.now(),
+    start_date: String(safeRecurringExpense.start_date || new Date().toISOString().slice(0, 10)),
+    amount: Number((Number(safeRecurringExpense.amount) || 0).toFixed(2)),
+    currency: String(safeRecurringExpense.currency || "UAH"),
+    description_raw: String(safeRecurringExpense.description_raw || "").trim(),
+    category: String(safeRecurringExpense.category || "регулярные").trim(),
+    sub_category: String(safeRecurringExpense.sub_category || "подписки").trim(),
+    for_whom: ALLOWED_FOR_WHOM.has(String(safeRecurringExpense.for_whom || "")) ? String(safeRecurringExpense.for_whom) : "myself",
+    frequency: frequency === "weekly" ? "weekly" : "monthly",
+    notes: String(safeRecurringExpense.notes || ""),
+    active: safeRecurringExpense.active !== false,
+    last_materialized_at: String(safeRecurringExpense.last_materialized_at || ""),
+  };
+}
+
 function sortByDateDesc(left, right) {
   return compareByDateWithTieBreaker(left, right, "desc");
+}
+
+function sortByStartDateDesc(left, right) {
+  const leftDate = String(left?.start_date || "");
+  const rightDate = String(right?.start_date || "");
+  if (leftDate !== rightDate) {
+    return rightDate.localeCompare(leftDate);
+  }
+
+  return (Number(right?.id) || 0) - (Number(left?.id) || 0);
 }
 
 function render() {
@@ -830,6 +1318,7 @@ function render() {
   renderSummary();
   renderIncomeView();
   renderCryptoView();
+  renderRecurringView();
   renderTable();
   renderCharts();
   renderSortState();
@@ -919,7 +1408,7 @@ function renderIncomeTable() {
   if (!incomes.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 5;
+    cell.colSpan = 6;
     cell.textContent = "Пока нет поступлений.";
     row.appendChild(cell);
     incomesTableBody.appendChild(row);
@@ -934,6 +1423,10 @@ function renderIncomeTable() {
       <td>${escapeHtml(income.amount.toFixed(2))} ${escapeHtml(income.currency)}</td>
       <td>${escapeHtml(toDisplayCase(income.source))}</td>
       <td>${escapeHtml(income.notes ? toDisplayCase(income.notes) : "—")}</td>
+      <td class="table-actions-cell">
+        <button type="button" class="table-icon-button" data-edit-income-id="${escapeHtml(String(income.id))}" aria-label="Редактировать доход">✎</button>
+        <button type="button" class="table-icon-button table-danger-button" data-delete-income-id="${escapeHtml(String(income.id))}" aria-label="Удалить доход">×</button>
+      </td>
     `;
     incomesTableBody.appendChild(row);
   }
@@ -968,7 +1461,7 @@ function renderCryptoTable(portfolioRows) {
   if (!portfolioRows.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.textContent = "Пока нет крипто позиций.";
     row.appendChild(cell);
     cryptoTableBody.appendChild(row);
@@ -985,8 +1478,56 @@ function renderCryptoTable(portfolioRows) {
       <td>${escapeHtml(rowData.asset.invested_amount.toFixed(2))} UAH</td>
       <td class="${rowData.profit < 0 ? "negative-cell" : "positive-cell"}">${rowData.hasPrice ? `${escapeHtml(formatSignedAmount(rowData.profit))} UAH` : "—"}</td>
       <td>${escapeHtml(rowData.asset.notes ? toDisplayCase(rowData.asset.notes) : "—")}</td>
+      <td class="table-actions-cell">
+        <button type="button" class="table-icon-button" data-edit-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Редактировать позицию">✎</button>
+        <button type="button" class="table-icon-button table-danger-button" data-delete-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Удалить позицию">×</button>
+      </td>
     `;
     cryptoTableBody.appendChild(row);
+  }
+}
+
+function renderRecurringView() {
+  if (!recurringTableBody) {
+    return;
+  }
+
+  const activeRecurringExpenses = recurringExpenses.filter((item) => item.active);
+  const monthlyAmount = activeRecurringExpenses.reduce((sum, item) => {
+    const multiplier = item.frequency === "weekly" ? 4.345 : 1;
+    return sum + item.amount * multiplier;
+  }, 0);
+
+  recurringMonthlyAmount.textContent = `${monthlyAmount.toFixed(2)} UAH`;
+  recurringCount.textContent = `${activeRecurringExpenses.length} активных правил`;
+  recurringTableBody.innerHTML = "";
+
+  if (!recurringExpenses.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 8;
+    cell.textContent = "Пока нет регулярных расходов.";
+    row.appendChild(cell);
+    recurringTableBody.appendChild(row);
+    return;
+  }
+
+  for (const recurringExpense of [...recurringExpenses].sort(sortByStartDateDesc)) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(String(recurringExpense.id))}</td>
+      <td>${escapeHtml(recurringExpense.start_date)}</td>
+      <td>${escapeHtml(recurringExpense.amount.toFixed(2))} ${escapeHtml(recurringExpense.currency)}</td>
+      <td>${escapeHtml(toDisplayCase(recurringExpense.description_raw))}</td>
+      <td>${escapeHtml(recurringExpense.frequency === "weekly" ? "Неделя" : "Месяц")}</td>
+      <td>${escapeHtml(formatCategoryLabel(recurringExpense.category))}</td>
+      <td>${escapeHtml(formatForWhomLabel(recurringExpense.for_whom))}</td>
+      <td class="table-actions-cell">
+        <button type="button" class="table-icon-button" data-edit-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Редактировать регулярную">✎</button>
+        <button type="button" class="table-icon-button table-danger-button" data-delete-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Удалить регулярную">×</button>
+      </td>
+    `;
+    recurringTableBody.appendChild(row);
   }
 }
 
@@ -1012,8 +1553,8 @@ function renderTable() {
   if (filteredExpenses.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 11;
-    cell.textContent = "Пока нет расходов.";
+    cell.colSpan = 12;
+    cell.textContent = expenses.length ? "По фильтрам ничего не найдено." : "Пока нет расходов.";
     row.appendChild(cell);
     tableBody.appendChild(row);
     return;
@@ -1036,6 +1577,9 @@ function renderTable() {
         <button type="button" class="table-edit-button" data-edit-expense-id="${escapeHtml(String(expense.id))}" aria-label="Редактировать запись">
           <span class="table-edit-icon" aria-hidden="true"></span>
         </button>
+      </td>
+      <td class="table-actions-cell">
+        <button type="button" class="table-icon-button table-danger-button" data-delete-expense-id="${escapeHtml(String(expense.id))}" aria-label="Удалить запись">×</button>
       </td>
     `;
     tableBody.appendChild(row);
@@ -1736,6 +2280,8 @@ function getExpenseShortTitle(expense) {
 }
 
 function applyFilters(sourceExpenses) {
+  const searchValue = normalizeSearchText(expenseSearchInput.value);
+
   return sourceExpenses.filter((expense) => {
     if (categoryFilter.value !== "all" && expense.category !== categoryFilter.value) {
       return false;
@@ -1753,8 +2299,36 @@ function applyFilters(sourceExpenses) {
       return false;
     }
 
+    if (searchValue && !buildExpenseSearchText(expense).includes(searchValue)) {
+      return false;
+    }
+
     return true;
   });
+}
+
+function buildExpenseSearchText(expense) {
+  return normalizeSearchText(
+    [
+      expense.id,
+      expense.date,
+      expense.amount,
+      expense.description_raw,
+      expense.product_name,
+      expense.category,
+      expense.sub_category,
+      expense.sub_sub_category,
+      formatForWhomLabel(expense.for_whom),
+      expense.notes,
+    ].join(" "),
+  );
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(",", ".")
+    .trim();
 }
 
 function setLoading(isLoading) {
@@ -1772,6 +2346,11 @@ function setCryptoLoading(isLoading) {
   cryptoSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить позицию";
 }
 
+function setRecurringLoading(isLoading) {
+  recurringSubmitButton.disabled = isLoading;
+  recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить регулярную";
+}
+
 function setStatus(message, isError = false) {
   statusMessage.textContent = message;
   statusMessage.classList.toggle("error", isError);
@@ -1785,6 +2364,20 @@ function setIncomeStatus(message, isError = false) {
 function setCryptoStatus(message, isError = false) {
   cryptoStatusMessage.textContent = message;
   cryptoStatusMessage.classList.toggle("error", isError);
+}
+
+function setRecurringStatus(message, isError = false) {
+  recurringStatusMessage.textContent = message;
+  recurringStatusMessage.classList.toggle("error", isError);
+}
+
+function setSyncState(state, message) {
+  if (!syncBanner) {
+    return;
+  }
+
+  syncBanner.textContent = message;
+  syncBanner.dataset.state = state;
 }
 
 async function refreshCryptoPrices() {

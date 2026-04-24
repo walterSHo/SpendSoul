@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./style.css?v=20260424-3" />
+    <link rel="stylesheet" href="./style.css?v=20260424-4" />
     <style>
       :root {
         color-scheme: dark;
@@ -23,7 +23,7 @@
       }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="./app.js?v=20260424-3" defer></script>
+    <script type="module" src="./app.js?v=20260424-4" defer></script>
   </head>
   <body>
     <div class="page-shell">
@@ -43,8 +43,11 @@
           <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
           <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
           <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
+          <button type="button" class="view-tab" data-view-target="recurring">Регулярные</button>
         </nav>
       </header>
+
+      <div id="syncBanner" class="sync-banner" role="status" aria-live="polite">Подключаюсь к серверу...</div>
 
       <div id="expensesView" class="app-view">
       <section class="latest-strip" aria-label="Последние траты">
@@ -139,6 +142,7 @@
             <div class="form-actions">
               <button type="submit" id="submitButton">Сохранить</button>
               <button type="button" id="clearLocalButton" class="ghost-button">Очистить локально</button>
+              <button type="button" id="resetServerButton" class="ghost-button danger-action">Сбросить сервер</button>
             </div>
 
             <p id="statusMessage" class="status-message" aria-live="polite"></p>
@@ -184,6 +188,11 @@
               <select id="forWhomFilter">
                 <option value="all">Все</option>
               </select>
+            </label>
+
+            <label class="full-width">
+              <span>Поиск</span>
+              <input id="expenseSearchInput" type="search" placeholder="Описание, категория, получатель, заметка или сумма" />
             </label>
 
             <label class="date-field">
@@ -278,6 +287,7 @@
                   <th><button type="button" class="table-sort-button" data-sort-key="for_whom">Для кого</button></th>
                   <th><button type="button" class="table-sort-button" data-sort-key="notes">Заметки</button></th>
                   <th class="table-actions-head" aria-label="Действия"></th>
+                  <th class="table-actions-head" aria-label="Удалить"></th>
                 </tr>
               </thead>
               <tbody id="expensesTableBody"></tbody>
@@ -366,6 +376,7 @@
                   <th>Сумма</th>
                   <th>Источник</th>
                   <th>Заметки</th>
+                  <th class="table-actions-head" aria-label="Действия"></th>
                 </tr>
               </thead>
               <tbody id="incomesTableBody"></tbody>
@@ -476,6 +487,7 @@
                   <th>Вложено</th>
                   <th>P/L</th>
                   <th>Заметки</th>
+                  <th class="table-actions-head" aria-label="Действия"></th>
                 </tr>
               </thead>
               <tbody id="cryptoTableBody"></tbody>
@@ -483,6 +495,118 @@
           </div>
         </section>
       </div>
+
+      <div id="recurringView" class="app-view hidden">
+        <section class="income-grid">
+          <div class="hero-copy-card recurring-form-card">
+            <p class="hero-kicker">Автоматические траты</p>
+            <div class="hero-form-head">
+              <div>
+                <h2>Регулярная трата</h2>
+                <p class="hero-copy">
+                  Добавьте аренду, подписки, интернет или сервисы. Приложение сможет создать расход за текущий период.
+                </p>
+              </div>
+              <div class="panel-chip">Авто</div>
+            </div>
+
+            <form id="recurringForm" class="expense-form hero-expense-form">
+              <label class="date-field">
+                <span>Старт</span>
+                <input type="date" id="recurringStartDate" required />
+                <span class="date-field-icon" aria-hidden="true"></span>
+              </label>
+
+              <label>
+                <span>Сумма</span>
+                <input type="number" id="recurringAmount" min="0" step="0.01" placeholder="0.00" required />
+              </label>
+
+              <label>
+                <span>Частота</span>
+                <select id="recurringFrequency">
+                  <option value="monthly">Каждый месяц</option>
+                  <option value="weekly">Каждую неделю</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Для кого</span>
+                <select id="recurringForWhom">
+                  <option value="myself">Я</option>
+                  <option value="household">Дом</option>
+                  <option value="family">Семья</option>
+                  <option value="pet">Животные</option>
+                  <option value="other">Другое</option>
+                </select>
+              </label>
+
+              <label class="full-width">
+                <span>Описание</span>
+                <input type="text" id="recurringDescription" placeholder="Например: аренда квартиры, Netflix, интернет" required />
+              </label>
+
+              <label>
+                <span>Категория</span>
+                <input type="text" id="recurringCategory" placeholder="Например: дом" />
+              </label>
+
+              <label>
+                <span>Подкатегория</span>
+                <input type="text" id="recurringSubCategory" placeholder="Например: подписки" />
+              </label>
+
+              <label class="full-width">
+                <span>Заметки</span>
+                <textarea id="recurringNotes" rows="3" placeholder="Например: списывается 5 числа"></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button type="submit" id="recurringSubmitButton">Сохранить регулярную</button>
+                <button type="button" id="materializeRecurringButton" class="ghost-button">Создать за период</button>
+              </div>
+
+              <p id="recurringStatusMessage" class="status-message" aria-live="polite"></p>
+            </form>
+          </div>
+
+          <div class="hero-stat-card recurring-stat-card">
+            <span class="stat-label">Регулярные платежи</span>
+            <strong id="recurringMonthlyAmount">0.00 UAH</strong>
+            <small id="recurringCount">0 активных правил</small>
+          </div>
+        </section>
+
+        <section class="panel table-panel recurring-table-panel">
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">Автоматизация</p>
+              <h2>Регулярные расходы</h2>
+              <p>Правила для подписок, аренды, интернета и других повторяющихся платежей.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="recurring-table">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Старт</th>
+                  <th>Сумма</th>
+                  <th>Описание</th>
+                  <th>Частота</th>
+                  <th>Категория</th>
+                  <th>Для кого</th>
+                  <th class="table-actions-head" aria-label="Действия"></th>
+                </tr>
+              </thead>
+              <tbody id="recurringTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <button type="button" id="quickAddButton" class="quick-add-button" aria-label="Быстро добавить">+</button>
     </div>
 
     <div id="confirmModal" class="modal hidden" aria-hidden="true">
