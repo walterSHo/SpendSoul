@@ -191,10 +191,13 @@ function buildSystemPrompt() {
     "Allowed for_whom values only: myself, friend, gift, loan, household, other.",
     "Interpret who benefited from the purchase:",
     "myself = for the user personally; friend = for a friend; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
+    "If the beneficiary is a girlfriend, boyfriend, partner, wife, husband, or a named person like Nastya, map it to friend because only the fixed enum is allowed.",
     "Use specific Russian or Ukrainian category labels when clear, for example: еда, транспорт, дом, здоровье, подарки, развлечения, покупки, дети, животные, подписки, техника, кафе.",
     "Use sub_category and sub_sub_category with increasing specificity when clear.",
     "If the text mentions chips/snacks/sweets/drinks, prefer category еда.",
+    "If the text mentions coffee/tea/drinks, prefer category еда, sub_category напитки, and a specific sub_sub_category such as кофе.",
     "If the text mentions taxi/metro/bus/fuel, prefer category транспорт.",
+    "If the text mentions a car purchase, prefer category транспорт with auto-related subcategories, not household.",
     "If the text mentions rent/utilities/cleaning/home goods, prefer category дом or household-related structure.",
     "If unsure, keep category values as other but still infer product_name and for_whom as best as possible.",
   ].join(" ");
@@ -207,8 +210,11 @@ function buildNormalizationPrompt(payload, nextId) {
     "Do not add fields. Do not omit fields. Return valid JSON only.",
     "Infer category, sub_category, sub_sub_category, product_name, and for_whom from the raw description.",
     "If the description says the item is for self, use for_whom=myself.",
-    "If the description says it is for a named person/friend, use for_whom=friend unless it is clearly a gift.",
+    "If the description says it is for a named person, girlfriend, boyfriend, partner, wife, husband, friend, mom, dad, brother, or sister, use for_whom=friend unless it is clearly a gift.",
     "If it is a shared home expense, use for_whom=household.",
+    "For coffee, tea, and drinks prefer sub_category=напитки and a specific sub_sub_category.",
+    "For chips, cookies, sweets, and snacks prefer sub_category=вкусняшки.",
+    "For car purchases or car expenses prefer category=транспорт, not дом.",
     "",
     JSON.stringify(
       {
@@ -246,18 +252,27 @@ function fallbackNormalize(payload, nextId) {
 }
 
 function sanitizeExpense(expense, nextId, payload) {
-  const safeForWhom = ALLOWED_FOR_WHOM.has(expense?.for_whom) ? expense.for_whom : "other";
+  const description = String(expense?.description_raw || payload.description_raw || "");
+  const inferredForWhom = inferForWhom(description);
+  const inferredCategories = inferCategories(description);
+  const inferredProductName = inferProductName(description);
+  const rawForWhom = String(expense?.for_whom || "").trim();
+  const safeForWhom = ALLOWED_FOR_WHOM.has(rawForWhom) ? rawForWhom : inferredForWhom;
+  const safeCategory = normalizeCategoryField(expense?.category, inferredCategories.category);
+  const safeSubCategory = normalizeCategoryField(expense?.sub_category, inferredCategories.sub_category);
+  const safeSubSubCategory = normalizeCategoryField(expense?.sub_sub_category, inferredCategories.sub_sub_category);
+  const safeProductName = normalizeTextField(expense?.product_name, inferredProductName);
 
   return {
     id: Number(expense?.id) || nextId,
     date: String(expense?.date || payload.date || ""),
     amount: Number(expense?.amount ?? payload.amount ?? 0),
     currency: String(expense?.currency || "UAH"),
-    description_raw: String(expense?.description_raw || payload.description_raw || ""),
-    product_name: String(expense?.product_name || ""),
-    category: String(expense?.category || "other"),
-    sub_category: String(expense?.sub_category || "other"),
-    sub_sub_category: String(expense?.sub_sub_category || "other"),
+    description_raw: description,
+    product_name: safeProductName,
+    category: safeCategory,
+    sub_category: safeSubCategory,
+    sub_sub_category: safeSubSubCategory,
     for_whom: safeForWhom,
     notes: String(expense?.notes || ""),
   };
@@ -302,12 +317,20 @@ function inferProductName(description) {
     return "кофе";
   }
 
+  if (lowered.includes("чай")) {
+    return "чай";
+  }
+
   if (lowered.includes("такси")) {
     return "такси";
   }
 
   if (lowered.includes("бенз")) {
     return "бензин";
+  }
+
+  if (/(автомоб|машин|тойота|toyota|bmw|mers|mercedes|audi|kia|hyundai)/i.test(lowered)) {
+    return "автомобиль";
   }
 
   return cleanDescription.split(" ")[0];
@@ -332,7 +355,11 @@ function inferForWhom(description) {
     return "household";
   }
 
-  if (/(для марк|для друга|другу|подруге|маме|папе|брату|сестре)/i.test(lowered)) {
+  if (
+    /(девушк|жене|жена|парню|парень|мужу|муж|партнер|партнёр|насте|настя|марк|друг[ауе]?|подруг[аеу]?|маме|папе|брату|сестре|сыну|дочк)/i.test(
+      lowered,
+    )
+  ) {
     return "friend";
   }
 
@@ -342,11 +369,39 @@ function inferForWhom(description) {
 function inferCategories(description) {
   const lowered = description.toLowerCase();
 
-  if (/(чипс|снек|печень|конфет|шоколад|принглс|еда|обед|ужин|завтрак|кофе|чай|пицц|суши)/i.test(lowered)) {
+  if (/(кофе|чай|латте|капучино|эспрессо|американо|какао|сок|кола|напит)/i.test(lowered)) {
+    return {
+      category: "еда",
+      sub_category: "напитки",
+      sub_sub_category: lowered.includes("чай") ? "чай" : "кофе",
+    };
+  }
+
+  if (/(чипс|снек|печень|конфет|шоколад|принглс|батончик|вкусняш)/i.test(lowered)) {
     return {
       category: "еда",
       sub_category: "вкусняшки",
       sub_sub_category: /(чипс|принглс)/i.test(lowered) ? "чипсы" : "другое",
+    };
+  }
+
+  if (/(еда|обед|ужин|завтрак|пицц|суши|бургер|кафе|ресторан|доставка)/i.test(lowered)) {
+    return {
+      category: "еда",
+      sub_category: "готовая еда",
+      sub_sub_category: /(пицц)/i.test(lowered)
+        ? "пицца"
+        : /(суши)/i.test(lowered)
+          ? "суши"
+          : "другое",
+    };
+  }
+
+  if (/(автомоб|машин|тойота|toyota|bmw|mers|mercedes|audi|kia|hyundai)/i.test(lowered)) {
+    return {
+      category: "транспорт",
+      sub_category: "автомобиль",
+      sub_sub_category: "покупка авто",
     };
   }
 
@@ -379,4 +434,19 @@ function inferCategories(description) {
     sub_category: "other",
     sub_sub_category: "other",
   };
+}
+
+function normalizeCategoryField(value, fallbackValue) {
+  const normalized = String(value || "").trim();
+
+  if (!normalized || normalized.toLowerCase() === "other") {
+    return fallbackValue;
+  }
+
+  return normalized;
+}
+
+function normalizeTextField(value, fallbackValue) {
+  const normalized = String(value || "").trim();
+  return normalized || fallbackValue;
 }
