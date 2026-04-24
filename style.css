@@ -26,6 +26,10 @@ body {
     linear-gradient(180deg, var(--bg), #f8f5ef 42%, var(--bg-accent));
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 button,
 input,
 textarea {
@@ -241,6 +245,10 @@ button[type="submit"]:disabled {
   position: fixed;
   inset: 0;
   z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
 }
 
 .modal-backdrop {
@@ -248,17 +256,21 @@ button[type="submit"]:disabled {
   inset: 0;
   background: rgba(24, 18, 12, 0.42);
   backdrop-filter: blur(6px);
+  z-index: 0;
 }
 
 .modal-card {
   position: relative;
   width: min(720px, calc(100% - 24px));
-  margin: 7vh auto 0;
+  margin: 0;
   padding: 22px;
   border-radius: 24px;
   background: rgba(255, 251, 245, 0.98);
   border: 1px solid rgba(92, 67, 38, 0.14);
   box-shadow: 0 28px 80px rgba(24, 18, 12, 0.22);
+  z-index: 1;
+  max-height: min(88vh, 920px);
+  overflow: auto;
 }
 
 .modal-header {
@@ -286,6 +298,34 @@ button[type="submit"]:disabled {
 .modal-copy {
   margin: 12px 0 0;
   color: var(--muted);
+}
+
+.confirm-decision {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.14);
+}
+
+.confirm-decision h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.confirm-decision p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.confirm-decision ul {
+  margin: 12px 0 0;
+  padding-left: 18px;
+}
+
+.confirm-decision li + li {
+  margin-top: 8px;
 }
 
 .confirm-preview {

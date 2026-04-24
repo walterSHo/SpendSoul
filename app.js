@@ -41,6 +41,7 @@ const forWhomFilter = document.querySelector("#forWhomFilter");
 const dateFromFilter = document.querySelector("#dateFromFilter");
 const dateToFilter = document.querySelector("#dateToFilter");
 const confirmModal = document.querySelector("#confirmModal");
+const confirmDecision = document.querySelector("#confirmDecision");
 const confirmPreview = document.querySelector("#confirmPreview");
 const confirmSaveButton = document.querySelector("#confirmSaveButton");
 const cancelConfirmButton = document.querySelector("#cancelConfirmButton");
@@ -52,6 +53,7 @@ let timelineChart;
 let expenses = loadExpenses();
 let filteredExpenses = [...expenses];
 let pendingExpense = null;
+let pendingDecision = null;
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 syncExpensesOnLoad();
@@ -95,9 +97,10 @@ async function handleSubmit(event) {
   setStatus("Нормализую трату...");
 
   try {
-    const normalizedExpense = await normalizeExpense(payload);
-    pendingExpense = normalizedExpense;
-    openConfirmDialog(normalizedExpense);
+    const normalizedResult = await normalizeExpense(payload);
+    pendingExpense = normalizedResult.expense;
+    pendingDecision = normalizedResult.decision;
+    openConfirmDialog(normalizedResult.expense, normalizedResult.decision);
     setStatus("Проверьте нормализованную трату и подтвердите сохранение.");
   } catch (error) {
     setStatus(error.message || "Не удалось сохранить трату.", true);
@@ -167,7 +170,10 @@ async function normalizeExpense(payload) {
     throw new Error(data?.error || "Ошибка нормализации.");
   }
 
-  return sanitizeExpense(data);
+  return {
+    expense: sanitizeExpense(data?.expense || data),
+    decision: sanitizeDecision(data?.decision),
+  };
 }
 
 async function fetchExpenses() {
@@ -503,6 +509,7 @@ async function handleConfirmSave() {
     dateInput.value = new Date().toISOString().slice(0, 10);
     quantityInput.value = "1";
     pendingExpense = null;
+    pendingDecision = null;
     closeConfirmDialog();
     setStatus("Трата сохранена.");
   } catch (error) {
@@ -513,7 +520,8 @@ async function handleConfirmSave() {
   }
 }
 
-function openConfirmDialog(expense) {
+function openConfirmDialog(expense, decision) {
+  confirmDecision.innerHTML = renderDecision(decision);
   confirmPreview.innerHTML = `
     ${renderConfirmItem("Сумма", `${expense.amount.toFixed(2)} ${expense.currency}`)}
     ${renderConfirmItem("Количество", String(expense.quantity))}
@@ -527,11 +535,13 @@ function openConfirmDialog(expense) {
   `;
   confirmModal.classList.remove("hidden");
   confirmModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
 }
 
 function closeConfirmDialog() {
   confirmModal.classList.add("hidden");
   confirmModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
 }
 
 function renderConfirmItem(label, value, isWide = false) {
@@ -541,6 +551,36 @@ function renderConfirmItem(label, value, isWide = false) {
       <span>${escapeHtml(value)}</span>
     </div>
   `;
+}
+
+function renderDecision(decision) {
+  const safeDecision = sanitizeDecision(decision);
+  const items = safeDecision.details
+    .map((item) => `<li>${escapeHtml(item.message)}</li>`)
+    .join("");
+
+  return `
+    <h3>Что сейчас сделает ИИ</h3>
+    <p>${escapeHtml(safeDecision.summary)}</p>
+    <ul>${items}</ul>
+  `;
+}
+
+function sanitizeDecision(decision) {
+  const details = Array.isArray(decision?.details)
+    ? decision.details.map((item) => ({
+        field: String(item?.field || ""),
+        label: String(item?.label || ""),
+        value: String(item?.value || ""),
+        action: String(item?.action || "fallback"),
+        message: String(item?.message || ""),
+      }))
+    : [];
+
+  return {
+    summary: String(decision?.summary || "ИИ определил категорию и получателя для этой траты."),
+    details,
+  };
 }
 
 function formatAggregateLabel(value) {

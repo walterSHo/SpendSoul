@@ -41,8 +41,12 @@ export default {
         const existingExpenses = await loadExpenses(env);
         const normalizedExpense = await normalizeExpenseWithOpenAI(body, nextId, env, existingExpenses);
         const sanitizedExpense = sanitizeExpense(normalizedExpense, nextId, body);
+        const decision = buildNormalizationDecision(sanitizedExpense, existingExpenses);
 
-        return jsonResponse(sanitizedExpense);
+        return jsonResponse({
+          expense: sanitizedExpense,
+          decision,
+        });
       }
 
       if (request.method === "POST" && url.pathname === "/api/add-expense") {
@@ -221,6 +225,8 @@ function buildSystemPrompt() {
     "Keep product_name short and useful.",
     "Use ai_hint as a strong steering hint when it is provided by the user.",
     "Prefer semantic consistency with the user's existing data over inventing unnecessary near-duplicate labels.",
+    "If a suitable existing label does not exist, create a new short Russian label instead of falling back to other.",
+    "Be decisive. For meaningful descriptions, category, sub_category, sub_sub_category, and for_whom should usually not remain other.",
   ].join(" ");
 }
 
@@ -247,6 +253,7 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses) {
     "If ai_hint is present, follow it unless it conflicts with the fixed schema.",
     "When a matching value already exists in the catalog, reuse it.",
     "If nothing suitable exists in the catalog, create a new concise Russian label.",
+    "Avoid returning other for category, sub_category, sub_sub_category, and for_whom when the description contains enough meaning to infer something better.",
     "",
     "Existing category catalog:",
     JSON.stringify(catalogs, null, 2),
@@ -566,10 +573,83 @@ function buildExistingCatalogs(expenses) {
     category: uniqueNonEmpty(expenses.map((expense) => expense.category)).filter((value) => value !== "other"),
     sub_category: uniqueNonEmpty(expenses.map((expense) => expense.sub_category)).filter((value) => value !== "other"),
     sub_sub_category: uniqueNonEmpty(expenses.map((expense) => expense.sub_sub_category)).filter((value) => value !== "other"),
-    for_whom: uniqueNonEmpty(expenses.map((expense) => expense.for_whom)),
+    for_whom: uniqueNonEmpty(expenses.map((expense) => expense.for_whom)).filter((value) => value !== "other"),
   };
 }
 
 function uniqueNonEmpty(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort();
+}
+
+function buildNormalizationDecision(expense, existingExpenses) {
+  const catalogs = buildExistingCatalogs(existingExpenses);
+  const fields = [
+    { key: "category", label: "Категория", value: expense.category },
+    { key: "sub_category", label: "Подкатегория", value: expense.sub_category },
+    { key: "sub_sub_category", label: "Под-подкатегория", value: expense.sub_sub_category },
+    { key: "for_whom", label: "Для кого", value: expense.for_whom },
+  ];
+
+  const details = fields.map(({ key, label, value }) => {
+    const normalizedValue = String(value || "").trim();
+    const catalogValues = catalogs[key] || [];
+    const exists = normalizedValue && catalogValues.includes(normalizedValue);
+
+    if (!normalizedValue || normalizedValue === "other") {
+      return {
+        field: key,
+        label,
+        value: normalizedValue || "other",
+        action: "fallback",
+        message: `${label}: оставил "Другое"`,
+      };
+    }
+
+    if (exists) {
+      return {
+        field: key,
+        label,
+        value: normalizedValue,
+        action: "reused",
+        message: `${label}: добавляю в существующее "${formatDecisionValue(key, normalizedValue)}"`,
+      };
+    }
+
+    return {
+      field: key,
+      label,
+      value: normalizedValue,
+      action: "created",
+      message: `${label}: создаю новое "${formatDecisionValue(key, normalizedValue)}"`,
+    };
+  });
+
+  return {
+    summary: details.map((detail) => detail.message).join(". "),
+    details,
+  };
+}
+
+function formatDecisionValue(field, value) {
+  if (field === "for_whom") {
+    return formatForWhomDecisionLabel(value);
+  }
+
+  return value === "other" ? "Другое" : value;
+}
+
+function formatForWhomDecisionLabel(value) {
+  const labels = {
+    myself: "Я",
+    friend: "Друзья",
+    girlfriend: "Девушка",
+    family: "Семья",
+    pet: "Животные",
+    gift: "Подарок",
+    loan: "Долг",
+    household: "Дом",
+    other: "Другое",
+  };
+
+  return labels[value] || value;
 }
