@@ -190,20 +190,24 @@ function buildSystemPrompt() {
   return [
     "You normalize personal expense records into one strict JSON object.",
     "Return JSON only with no markdown and no explanation.",
-    "Use exactly these fields: id, date, amount, quantity, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes.",
+    "Use exactly these fields: id, date, amount, quantity, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes, ai_hint.",
     "Do not add, remove, or rename fields.",
     "Keep amount as number, quantity as integer, and all other non-numeric values as strings.",
     "Allowed for_whom values only: myself, friend, girlfriend, gift, loan, household, other.",
     "Interpret who benefited from the purchase:",
     "myself = for the user personally; friend = for a friend or other person; girlfriend = specifically for girlfriend, wife, or female partner; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
-    "Use specific Russian or Ukrainian category labels when clear, for example: еда, транспорт, дом, здоровье, подарки, развлечения, покупки, дети, животные, подписки, техника, кафе.",
+    "If beneficiary is not explicitly stated, default to myself.",
+    "Use concise Russian category labels and infer them by meaning even if they were not seen before.",
+    "You may create new category, sub_category, and sub_sub_category values when helpful, but keep them short, natural, and specific.",
     "Use sub_category and sub_sub_category with increasing specificity when clear.",
     "If the text mentions chips/snacks/sweets/drinks, prefer category еда.",
     "If the text mentions coffee/tea/drinks, prefer category еда, sub_category напитки, and a specific sub_sub_category such as кофе.",
     "If the text mentions taxi/metro/bus/fuel, prefer category транспорт.",
     "If the text mentions a car purchase, prefer category транспорт with auto-related subcategories, not household.",
     "If the text mentions rent/utilities/cleaning/home goods, prefer category дом or household-related structure.",
-    "If unsure, keep category values as other but still infer product_name and for_whom as best as possible.",
+    "Avoid using other for category fields unless the meaning is truly impossible to infer.",
+    "Keep product_name short and useful.",
+    "Use ai_hint as a strong steering hint when it is provided by the user.",
   ].join(" ");
 }
 
@@ -217,20 +221,24 @@ function buildNormalizationPrompt(payload, nextId) {
     "If the description says it is for a girlfriend, wife, or female partner, use for_whom=girlfriend.",
     "If the description says it is for a named person, boyfriend, husband, friend, mom, dad, brother, or sister, use for_whom=friend unless it is clearly a gift.",
     "If it is a shared home expense, use for_whom=household.",
+    "If there is no explicit beneficiary, use for_whom=myself.",
     "For coffee, tea, and drinks prefer sub_category=напитки and a specific sub_sub_category.",
     "For chips, cookies, sweets, and snacks prefer sub_category=вкусняшки.",
     "For car purchases or car expenses prefer category=транспорт, not дом.",
     "If quantity is not explicitly mentioned, set quantity=1.",
+    "amount must be the total expense for the whole record, not the per-item price, so total amount = unit price multiplied by quantity.",
+    "If ai_hint is present, follow it unless it conflicts with the fixed schema.",
     "",
     JSON.stringify(
       {
         id: nextId,
         date: payload.date,
-        amount: payload.amount,
+        amount: calculateTotalAmount(payload.amount, payload.quantity || 1),
         quantity: payload.quantity || 1,
         currency: "UAH",
         description_raw: payload.description_raw,
         notes: payload.notes || "",
+        ai_hint: payload.ai_hint || "",
       },
       null,
       2,
@@ -243,12 +251,13 @@ function fallbackNormalize(payload, nextId) {
   const normalizedProduct = inferProductName(description);
   const inferredForWhom = inferForWhom(description);
   const inferredCategories = inferCategories(description);
+  const quantity = normalizeQuantity(payload.quantity);
 
   return {
     id: nextId,
     date: payload.date,
-    amount: payload.amount,
-    quantity: Number(payload.quantity) || 1,
+    amount: calculateTotalAmount(payload.amount, quantity),
+    quantity,
     currency: "UAH",
     description_raw: description,
     product_name: normalizedProduct,
@@ -257,6 +266,7 @@ function fallbackNormalize(payload, nextId) {
     sub_sub_category: inferredCategories.sub_sub_category,
     for_whom: inferredForWhom,
     notes: String(payload.notes || ""),
+    ai_hint: String(payload.ai_hint || ""),
   };
 }
 
@@ -265,6 +275,7 @@ function sanitizeExpense(expense, nextId, payload) {
   const inferredForWhom = inferForWhom(description);
   const inferredCategories = inferCategories(description);
   const inferredProductName = inferProductName(description);
+  const quantity = normalizeQuantity(expense?.quantity ?? payload.quantity);
   const rawForWhom = String(expense?.for_whom || "").trim();
   const safeForWhom = ALLOWED_FOR_WHOM.has(rawForWhom) ? rawForWhom : inferredForWhom;
   const safeCategory = normalizeCategoryField(expense?.category, inferredCategories.category);
@@ -275,8 +286,8 @@ function sanitizeExpense(expense, nextId, payload) {
   return {
     id: Number(expense?.id) || nextId,
     date: String(expense?.date || payload.date || ""),
-    amount: Number(expense?.amount ?? payload.amount ?? 0),
-    quantity: Math.max(1, Number(expense?.quantity ?? payload.quantity ?? 1) || 1),
+    amount: calculateTotalAmount(expense?.amount ?? payload.amount ?? 0, quantity),
+    quantity,
     currency: String(expense?.currency || "UAH"),
     description_raw: description,
     product_name: safeProductName,
@@ -285,6 +296,7 @@ function sanitizeExpense(expense, nextId, payload) {
     sub_sub_category: safeSubSubCategory,
     for_whom: safeForWhom,
     notes: String(expense?.notes || payload.notes || ""),
+    ai_hint: String(expense?.ai_hint || payload.ai_hint || ""),
   };
 }
 
@@ -369,15 +381,39 @@ function inferForWhom(description) {
     return "girlfriend";
   }
 
-  if (/(парню|парень|мужу|муж|партнер|партнёр|насте|настя|марк|друг[ауе]?|подруг[аеу]?|маме|папе|брату|сестре|сыну|дочк)/i.test(lowered)) {
+  if (/(родител|маме|папе|матери|отцу|парню|парень|мужу|муж|партнер|партнёр|насте|настя|марк|друг[ауе]?|подруг[аеу]?|брату|сестре|сыну|дочк)/i.test(lowered)) {
     return "friend";
   }
 
-  return "other";
+  return "myself";
 }
 
 function inferCategories(description) {
   const lowered = description.toLowerCase();
+
+  if (/(тапк|кроссов|ботин|туфл|сандал|обув)/i.test(lowered)) {
+    return {
+      category: "одежда",
+      sub_category: "обувь",
+      sub_sub_category: /(тапк)/i.test(lowered) ? "тапки" : "другое",
+    };
+  }
+
+  if (/(коляск|самокат|велосипед|игрушк|детск)/i.test(lowered)) {
+    return {
+      category: "дети",
+      sub_category: /(игрушк)/i.test(lowered) ? "игрушки" : "товары для детей",
+      sub_sub_category: /(коляск)/i.test(lowered) ? "коляска" : "другое",
+    };
+  }
+
+  if (/(собак|корм|кот|кошк|ветеринар|наполнитель)/i.test(lowered)) {
+    return {
+      category: "животные",
+      sub_category: /(ветеринар)/i.test(lowered) ? "ветеринария" : "уход",
+      sub_sub_category: /(корм)/i.test(lowered) ? "корм" : "другое",
+    };
+  }
 
   if (/(кофе|чай|латте|капучино|эспрессо|американо|какао|сок|кола|напит)/i.test(lowered)) {
     return {
@@ -459,4 +495,14 @@ function normalizeCategoryField(value, fallbackValue) {
 function normalizeTextField(value, fallbackValue) {
   const normalized = String(value || "").trim();
   return normalized || fallbackValue;
+}
+
+function normalizeQuantity(value) {
+  return Math.max(1, Number(value) || 1);
+}
+
+function calculateTotalAmount(amount, quantity) {
+  const unitAmount = Number(amount) || 0;
+  const safeQuantity = normalizeQuantity(quantity);
+  return Number((unitAmount * safeQuantity).toFixed(2));
 }

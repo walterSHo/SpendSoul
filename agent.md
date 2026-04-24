@@ -77,7 +77,8 @@ Worker должен:
   "sub_category": "вкусняшки",
   "sub_sub_category": "чипсы",
   "for_whom": "friend",
-  "notes": "взял две упаковки"
+  "notes": "взял две упаковки",
+  "ai_hint": "это для Марка"
 }
 ```
 
@@ -110,6 +111,7 @@ Worker должен:
 - `quantity`
 - `description_raw`
 - `notes`
+- `ai_hint`
 
 ### Поведение при сохранении
 

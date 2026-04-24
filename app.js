@@ -25,6 +25,7 @@ const amountInput = document.querySelector("#amount");
 const quantityInput = document.querySelector("#quantity");
 const descriptionInput = document.querySelector("#description_raw");
 const notesInput = document.querySelector("#notes");
+const aiHintInput = document.querySelector("#ai_hint");
 const submitButton = document.querySelector("#submitButton");
 const clearLocalButton = document.querySelector("#clearLocalButton");
 const statusMessage = document.querySelector("#statusMessage");
@@ -62,6 +63,7 @@ async function handleSubmit(event) {
     description_raw: descriptionInput.value.trim(),
     quantity: Number(quantityInput.value || 1),
     notes: notesInput.value.trim(),
+    ai_hint: aiHintInput.value.trim(),
   };
 
   if (
