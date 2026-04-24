@@ -82,7 +82,33 @@
         <section class="panel charts-panel">
           <div class="panel-heading">
             <h2>Аналитика</h2>
-            <p>Сводка строится по данным из localStorage.</p>
+            <p>Сводка строится по данным из Cloudflare Worker и локального кеша.</p>
+          </div>
+
+          <div class="filters-grid">
+            <label>
+              <span>Категория</span>
+              <select id="categoryFilter">
+                <option value="all">Все</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Для кого</span>
+              <select id="forWhomFilter">
+                <option value="all">Все</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Период от</span>
+              <input type="date" id="dateFromFilter" />
+            </label>
+
+            <label>
+              <span>Период до</span>
+              <input type="date" id="dateToFilter" />
+            </label>
           </div>
 
           <div class="charts-grid">
@@ -93,6 +119,10 @@
             <div class="chart-card">
               <h3>По получателю</h3>
               <canvas id="forWhomChart"></canvas>
+            </div>
+            <div class="chart-card chart-card-wide">
+              <h3>По дням</h3>
+              <canvas id="timelineChart"></canvas>
             </div>
           </div>
         </section>

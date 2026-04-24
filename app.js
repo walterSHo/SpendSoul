@@ -19,16 +19,27 @@ const statusMessage = document.querySelector("#statusMessage");
 const tableBody = document.querySelector("#expensesTableBody");
 const totalAmountNode = document.querySelector("#totalAmount");
 const expenseCountNode = document.querySelector("#expenseCount");
+const categoryFilter = document.querySelector("#categoryFilter");
+const forWhomFilter = document.querySelector("#forWhomFilter");
+const dateFromFilter = document.querySelector("#dateFromFilter");
+const dateToFilter = document.querySelector("#dateToFilter");
 
 let categoryChart;
 let forWhomChart;
+let timelineChart;
 let expenses = loadExpenses();
+let filteredExpenses = [...expenses];
 
 dateInput.value = new Date().toISOString().slice(0, 10);
+syncExpensesOnLoad();
 render();
 
 form.addEventListener("submit", handleSubmit);
 clearLocalButton.addEventListener("click", handleClearLocalStorage);
+categoryFilter.addEventListener("change", handleFiltersChange);
+forWhomFilter.addEventListener("change", handleFiltersChange);
+dateFromFilter.addEventListener("change", handleFiltersChange);
+dateToFilter.addEventListener("change", handleFiltersChange);
 
 async function handleSubmit(event) {
   event.preventDefault();
@@ -51,6 +62,7 @@ async function handleSubmit(event) {
     const normalizedExpense = await createExpense(payload);
     expenses = upsertExpense(expenses, normalizedExpense);
     persistExpenses(expenses);
+    syncFilterOptions();
     render();
     form.reset();
     dateInput.value = new Date().toISOString().slice(0, 10);
@@ -65,8 +77,13 @@ async function handleSubmit(event) {
 function handleClearLocalStorage() {
   localStorage.removeItem(STORAGE_KEY);
   expenses = [];
+  syncFilterOptions();
   render();
   setStatus("localStorage очищен.");
+}
+
+function handleFiltersChange() {
+  render();
 }
 
 async function createExpense(payload) {
@@ -90,6 +107,42 @@ async function createExpense(payload) {
   }
 
   return sanitizeExpense(data);
+}
+
+async function fetchExpenses() {
+  const response = await fetch(`${WORKER_BASE_URL}/api/expenses`);
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Не удалось прочитать список трат с сервера.");
+  }
+
+  if (!response.ok || !Array.isArray(data)) {
+    throw new Error(data?.error || "Не удалось загрузить траты с сервера.");
+  }
+
+  return data.map(sanitizeExpense).sort(sortByDateDesc);
+}
+
+async function syncExpensesOnLoad() {
+  setStatus("Загружаю данные с сервера...");
+
+  try {
+    const serverExpenses = await fetchExpenses();
+    if (serverExpenses.length > 0 || expenses.length === 0) {
+      expenses = mergeExpenses(serverExpenses, expenses);
+      persistExpenses(expenses);
+    }
+    syncFilterOptions();
+    render();
+    setStatus("Данные синхронизированы.");
+  } catch (error) {
+    syncFilterOptions();
+    render();
+    setStatus(error.message || "Не удалось синхронизировать данные, использую localStorage.", true);
+  }
 }
 
 function loadExpenses() {
@@ -119,6 +172,17 @@ function upsertExpense(currentExpenses, incomingExpense) {
   return [...withoutCurrent, incomingExpense].sort(sortByDateDesc);
 }
 
+function mergeExpenses(primaryExpenses, fallbackExpenses) {
+  const merged = new Map();
+
+  for (const expense of [...fallbackExpenses, ...primaryExpenses]) {
+    const safeExpense = sanitizeExpense(expense);
+    merged.set(safeExpense.id, safeExpense);
+  }
+
+  return [...merged.values()].sort(sortByDateDesc);
+}
+
 function sanitizeExpense(expense) {
   return {
     id: Number(expense.id) || Date.now(),
@@ -140,21 +204,22 @@ function sortByDateDesc(left, right) {
 }
 
 function render() {
+  filteredExpenses = applyFilters(expenses);
   renderSummary();
   renderTable();
   renderCharts();
 }
 
 function renderSummary() {
-  const total = expenses.reduce((sum, item) => sum + item.amount, 0);
+  const total = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
   totalAmountNode.textContent = `${total.toFixed(2)} UAH`;
-  expenseCountNode.textContent = `${expenses.length} записей`;
+  expenseCountNode.textContent = `${filteredExpenses.length} записей`;
 }
 
 function renderTable() {
   tableBody.innerHTML = "";
 
-  if (expenses.length === 0) {
+  if (filteredExpenses.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 10;
@@ -164,7 +229,7 @@ function renderTable() {
     return;
   }
 
-  for (const expense of expenses) {
+  for (const expense of filteredExpenses) {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${escapeHtml(String(expense.id))}</td>
@@ -185,6 +250,7 @@ function renderTable() {
 function renderCharts() {
   const categoryData = aggregateBy("category");
   const forWhomData = aggregateBy("for_whom");
+  const timelineData = aggregateByDate();
 
   categoryChart = renderPieChart(categoryChart, "#categoryChart", categoryData, [
     "#0f766e",
@@ -203,17 +269,33 @@ function renderCharts() {
     "#7c3aed",
     "#047857",
   ]);
+
+  timelineChart = renderBarChart(timelineChart, "#timelineChart", timelineData, "#0f766e");
 }
 
 function aggregateBy(field) {
   const totals = new Map();
 
-  for (const expense of expenses) {
+  for (const expense of filteredExpenses) {
     const key = expense[field] || "other";
     totals.set(key, (totals.get(key) || 0) + expense.amount);
   }
 
   const labels = [...totals.keys()];
+  const values = labels.map((label) => totals.get(label));
+
+  return { labels, values };
+}
+
+function aggregateByDate() {
+  const totals = new Map();
+
+  for (const expense of filteredExpenses) {
+    const key = expense.date || "Без даты";
+    totals.set(key, (totals.get(key) || 0) + expense.amount);
+  }
+
+  const labels = [...totals.keys()].sort();
   const values = labels.map((label) => totals.get(label));
 
   return { labels, values };
@@ -247,6 +329,86 @@ function renderPieChart(existingChart, selector, dataset, colors) {
         },
       },
     },
+  });
+}
+
+function renderBarChart(existingChart, selector, dataset, color) {
+  const canvas = document.querySelector(selector);
+
+  if (existingChart) {
+    existingChart.destroy();
+  }
+
+  return new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: dataset.labels.length ? dataset.labels : ["Нет данных"],
+      datasets: [
+        {
+          label: "Сумма",
+          data: dataset.values.length ? dataset.values : [0],
+          backgroundColor: color,
+          borderRadius: 12,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+function syncFilterOptions() {
+  syncSelectOptions(categoryFilter, expenses.map((expense) => expense.category));
+  syncSelectOptions(forWhomFilter, expenses.map((expense) => expense.for_whom));
+}
+
+function syncSelectOptions(selectNode, values) {
+  const currentValue = selectNode.value || "all";
+  const uniqueValues = [...new Set(values.filter(Boolean))].sort();
+
+  selectNode.innerHTML = '<option value="all">Все</option>';
+
+  for (const value of uniqueValues) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    selectNode.appendChild(option);
+  }
+
+  selectNode.value = uniqueValues.includes(currentValue) || currentValue === "all" ? currentValue : "all";
+}
+
+function applyFilters(sourceExpenses) {
+  return sourceExpenses.filter((expense) => {
+    if (categoryFilter.value !== "all" && expense.category !== categoryFilter.value) {
+      return false;
+    }
+
+    if (forWhomFilter.value !== "all" && expense.for_whom !== forWhomFilter.value) {
+      return false;
+    }
+
+    if (dateFromFilter.value && expense.date < dateFromFilter.value) {
+      return false;
+    }
+
+    if (dateToFilter.value && expense.date > dateToFilter.value) {
+      return false;
+    }
+
+    return true;
   });
 }
 

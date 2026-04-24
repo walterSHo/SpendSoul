@@ -111,6 +111,7 @@ async function normalizeExpenseWithOpenAI(payload, nextId, env) {
     return fallbackNormalize(payload, nextId);
   }
 
+  const systemPrompt = buildSystemPrompt();
   const prompt = buildNormalizationPrompt(payload, nextId);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -126,7 +127,7 @@ async function normalizeExpenseWithOpenAI(payload, nextId, env) {
           content: [
             {
               type: "input_text",
-              text: "Normalize expense data strictly into the required JSON schema. Return JSON only.",
+              text: systemPrompt,
             },
           ],
         },
@@ -144,6 +145,7 @@ async function normalizeExpenseWithOpenAI(payload, nextId, env) {
   });
 
   if (!response.ok) {
+    console.error("OpenAI request failed", response.status, await response.text());
     return fallbackNormalize(payload, nextId);
   }
 
@@ -163,7 +165,7 @@ async function normalizeExpenseWithOpenAI(payload, nextId, env) {
 
 function extractResponseText(data) {
   if (typeof data?.output_text === "string" && data.output_text.trim()) {
-    return data.output_text.trim();
+    return cleanJsonText(data.output_text);
   }
 
   const outputs = Array.isArray(data?.output) ? data.output : [];
@@ -171,7 +173,7 @@ function extractResponseText(data) {
     const contents = Array.isArray(outputItem?.content) ? outputItem.content : [];
     for (const contentItem of contents) {
       if (contentItem?.type === "output_text" && typeof contentItem.text === "string") {
-        return contentItem.text.trim();
+        return cleanJsonText(contentItem.text);
       }
     }
   }
@@ -179,11 +181,34 @@ function extractResponseText(data) {
   return "";
 }
 
+function buildSystemPrompt() {
+  return [
+    "You normalize personal expense records into one strict JSON object.",
+    "Return JSON only with no markdown and no explanation.",
+    "Use exactly these fields: id, date, amount, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes.",
+    "Do not add, remove, or rename fields.",
+    "Keep amount as number and all other non-numeric values as strings.",
+    "Allowed for_whom values only: myself, friend, gift, loan, household, other.",
+    "Interpret who benefited from the purchase:",
+    "myself = for the user personally; friend = for a friend; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
+    "Use specific Russian or Ukrainian category labels when clear, for example: еда, транспорт, дом, здоровье, подарки, развлечения, покупки, дети, животные, подписки, техника, кафе.",
+    "Use sub_category and sub_sub_category with increasing specificity when clear.",
+    "If the text mentions chips/snacks/sweets/drinks, prefer category еда.",
+    "If the text mentions taxi/metro/bus/fuel, prefer category транспорт.",
+    "If the text mentions rent/utilities/cleaning/home goods, prefer category дом or household-related structure.",
+    "If unsure, keep category values as other but still infer product_name and for_whom as best as possible.",
+  ].join(" ");
+}
+
 function buildNormalizationPrompt(payload, nextId) {
   return [
     "Normalize the following expense into the exact JSON schema.",
     "Allowed for_whom values: myself, friend, gift, loan, household, other.",
     "Do not add fields. Do not omit fields. Return valid JSON only.",
+    "Infer category, sub_category, sub_sub_category, product_name, and for_whom from the raw description.",
+    "If the description says the item is for self, use for_whom=myself.",
+    "If the description says it is for a named person/friend, use for_whom=friend unless it is clearly a gift.",
+    "If it is a shared home expense, use for_whom=household.",
     "",
     JSON.stringify(
       {
@@ -201,7 +226,9 @@ function buildNormalizationPrompt(payload, nextId) {
 
 function fallbackNormalize(payload, nextId) {
   const description = String(payload.description_raw || "").trim();
-  const normalizedProduct = description.split(" ")[0] || "other";
+  const normalizedProduct = inferProductName(description);
+  const inferredForWhom = inferForWhom(description);
+  const inferredCategories = inferCategories(description);
 
   return {
     id: nextId,
@@ -210,10 +237,10 @@ function fallbackNormalize(payload, nextId) {
     currency: "UAH",
     description_raw: description,
     product_name: normalizedProduct,
-    category: "other",
-    sub_category: "other",
-    sub_sub_category: "other",
-    for_whom: "other",
+    category: inferredCategories.category,
+    sub_category: inferredCategories.sub_category,
+    sub_sub_category: inferredCategories.sub_sub_category,
+    for_whom: inferredForWhom,
     notes: "",
   };
 }
@@ -244,4 +271,112 @@ function jsonResponse(payload, status = 200) {
       ...DEFAULT_CORS_HEADERS,
     },
   });
+}
+
+function cleanJsonText(value) {
+  return String(value)
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+}
+
+function inferProductName(description) {
+  const cleanDescription = description
+    .replace(/[.,!?]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleanDescription) {
+    return "other";
+  }
+
+  const lowered = cleanDescription.toLowerCase();
+
+  if (lowered.includes("чипс")) {
+    return "чипсы";
+  }
+
+  if (lowered.includes("кофе")) {
+    return "кофе";
+  }
+
+  if (lowered.includes("такси")) {
+    return "такси";
+  }
+
+  if (lowered.includes("бенз")) {
+    return "бензин";
+  }
+
+  return cleanDescription.split(" ")[0];
+}
+
+function inferForWhom(description) {
+  const lowered = description.toLowerCase();
+
+  if (/(себе|для себя|myself)/i.test(lowered)) {
+    return "myself";
+  }
+
+  if (/(подарок|на подарок)/i.test(lowered)) {
+    return "gift";
+  }
+
+  if (/(в долг|одолжил|займ|loan)/i.test(lowered)) {
+    return "loan";
+  }
+
+  if (/(домой|для дома|дом|семья|семье|коммунал|быт)/i.test(lowered)) {
+    return "household";
+  }
+
+  if (/(для марк|для друга|другу|подруге|маме|папе|брату|сестре)/i.test(lowered)) {
+    return "friend";
+  }
+
+  return "other";
+}
+
+function inferCategories(description) {
+  const lowered = description.toLowerCase();
+
+  if (/(чипс|снек|печень|конфет|шоколад|принглс|еда|обед|ужин|завтрак|кофе|чай|пицц|суши)/i.test(lowered)) {
+    return {
+      category: "еда",
+      sub_category: "вкусняшки",
+      sub_sub_category: /(чипс|принглс)/i.test(lowered) ? "чипсы" : "другое",
+    };
+  }
+
+  if (/(такси|метро|автобус|транспорт|бенз|заправк)/i.test(lowered)) {
+    return {
+      category: "транспорт",
+      sub_category: /(бенз|заправк)/i.test(lowered) ? "топливо" : "поездки",
+      sub_sub_category: /(такси)/i.test(lowered) ? "такси" : "другое",
+    };
+  }
+
+  if (/(аренда|квартир|коммунал|дом|уборк|порошок|быт)/i.test(lowered)) {
+    return {
+      category: "дом",
+      sub_category: "быт",
+      sub_sub_category: "другое",
+    };
+  }
+
+  if (/(аптек|лекар|врач|анализ)/i.test(lowered)) {
+    return {
+      category: "здоровье",
+      sub_category: "лечение",
+      sub_sub_category: "другое",
+    };
+  }
+
+  return {
+    category: "other",
+    sub_category: "other",
+    sub_sub_category: "other",
+  };
 }
