@@ -1,6 +1,7 @@
 const ALLOWED_FOR_WHOM = new Set([
   "myself",
   "friend",
+  "girlfriend",
   "gift",
   "loan",
   "household",
@@ -65,6 +66,10 @@ function validateIncomingPayload(body) {
 
   if (typeof body.amount !== "number" || Number.isNaN(body.amount)) {
     throw new Error("amount must be a number.");
+  }
+
+  if (body.quantity !== undefined && (!Number.isInteger(body.quantity) || body.quantity < 1)) {
+    throw new Error("quantity must be a positive integer.");
   }
 }
 
@@ -185,13 +190,12 @@ function buildSystemPrompt() {
   return [
     "You normalize personal expense records into one strict JSON object.",
     "Return JSON only with no markdown and no explanation.",
-    "Use exactly these fields: id, date, amount, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes.",
+    "Use exactly these fields: id, date, amount, quantity, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes.",
     "Do not add, remove, or rename fields.",
-    "Keep amount as number and all other non-numeric values as strings.",
-    "Allowed for_whom values only: myself, friend, gift, loan, household, other.",
+    "Keep amount as number, quantity as integer, and all other non-numeric values as strings.",
+    "Allowed for_whom values only: myself, friend, girlfriend, gift, loan, household, other.",
     "Interpret who benefited from the purchase:",
-    "myself = for the user personally; friend = for a friend; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
-    "If the beneficiary is a girlfriend, boyfriend, partner, wife, husband, or a named person like Nastya, map it to friend because only the fixed enum is allowed.",
+    "myself = for the user personally; friend = for a friend or other person; girlfriend = specifically for girlfriend, wife, or female partner; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
     "Use specific Russian or Ukrainian category labels when clear, for example: еда, транспорт, дом, здоровье, подарки, развлечения, покупки, дети, животные, подписки, техника, кафе.",
     "Use sub_category and sub_sub_category with increasing specificity when clear.",
     "If the text mentions chips/snacks/sweets/drinks, prefer category еда.",
@@ -206,23 +210,27 @@ function buildSystemPrompt() {
 function buildNormalizationPrompt(payload, nextId) {
   return [
     "Normalize the following expense into the exact JSON schema.",
-    "Allowed for_whom values: myself, friend, gift, loan, household, other.",
+    "Allowed for_whom values: myself, friend, girlfriend, gift, loan, household, other.",
     "Do not add fields. Do not omit fields. Return valid JSON only.",
     "Infer category, sub_category, sub_sub_category, product_name, and for_whom from the raw description.",
     "If the description says the item is for self, use for_whom=myself.",
-    "If the description says it is for a named person, girlfriend, boyfriend, partner, wife, husband, friend, mom, dad, brother, or sister, use for_whom=friend unless it is clearly a gift.",
+    "If the description says it is for a girlfriend, wife, or female partner, use for_whom=girlfriend.",
+    "If the description says it is for a named person, boyfriend, husband, friend, mom, dad, brother, or sister, use for_whom=friend unless it is clearly a gift.",
     "If it is a shared home expense, use for_whom=household.",
     "For coffee, tea, and drinks prefer sub_category=напитки and a specific sub_sub_category.",
     "For chips, cookies, sweets, and snacks prefer sub_category=вкусняшки.",
     "For car purchases or car expenses prefer category=транспорт, not дом.",
+    "If quantity is not explicitly mentioned, set quantity=1.",
     "",
     JSON.stringify(
       {
         id: nextId,
         date: payload.date,
         amount: payload.amount,
+        quantity: payload.quantity || 1,
         currency: "UAH",
         description_raw: payload.description_raw,
+        notes: payload.notes || "",
       },
       null,
       2,
@@ -240,6 +248,7 @@ function fallbackNormalize(payload, nextId) {
     id: nextId,
     date: payload.date,
     amount: payload.amount,
+    quantity: Number(payload.quantity) || 1,
     currency: "UAH",
     description_raw: description,
     product_name: normalizedProduct,
@@ -247,7 +256,7 @@ function fallbackNormalize(payload, nextId) {
     sub_category: inferredCategories.sub_category,
     sub_sub_category: inferredCategories.sub_sub_category,
     for_whom: inferredForWhom,
-    notes: "",
+    notes: String(payload.notes || ""),
   };
 }
 
@@ -267,6 +276,7 @@ function sanitizeExpense(expense, nextId, payload) {
     id: Number(expense?.id) || nextId,
     date: String(expense?.date || payload.date || ""),
     amount: Number(expense?.amount ?? payload.amount ?? 0),
+    quantity: Math.max(1, Number(expense?.quantity ?? payload.quantity ?? 1) || 1),
     currency: String(expense?.currency || "UAH"),
     description_raw: description,
     product_name: safeProductName,
@@ -274,7 +284,7 @@ function sanitizeExpense(expense, nextId, payload) {
     sub_category: safeSubCategory,
     sub_sub_category: safeSubSubCategory,
     for_whom: safeForWhom,
-    notes: String(expense?.notes || ""),
+    notes: String(expense?.notes || payload.notes || ""),
   };
 }
 
@@ -355,11 +365,11 @@ function inferForWhom(description) {
     return "household";
   }
 
-  if (
-    /(девушк|жене|жена|парню|парень|мужу|муж|партнер|партнёр|насте|настя|марк|друг[ауе]?|подруг[аеу]?|маме|папе|брату|сестре|сыну|дочк)/i.test(
-      lowered,
-    )
-  ) {
+  if (/(девушк|жене|жена|любимой|любимая|невест|партнерш|партнёрш)/i.test(lowered)) {
+    return "girlfriend";
+  }
+
+  if (/(парню|парень|мужу|муж|партнер|партнёр|насте|настя|марк|друг[ауе]?|подруг[аеу]?|маме|папе|брату|сестре|сыну|дочк)/i.test(lowered)) {
     return "friend";
   }
 

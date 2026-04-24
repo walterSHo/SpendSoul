@@ -3,16 +3,28 @@ const WORKER_BASE_URL = "https://spendsoul-api.waltershcroder.workers.dev";
 const ALLOWED_FOR_WHOM = new Set([
   "myself",
   "friend",
+  "girlfriend",
   "gift",
   "loan",
   "household",
   "other",
 ]);
+const FOR_WHOM_LABELS = {
+  myself: "Я",
+  friend: "Друзья",
+  girlfriend: "Девушка",
+  gift: "Подарок",
+  loan: "Долг",
+  household: "Дом",
+  other: "Другое",
+};
 
 const form = document.querySelector("#expenseForm");
 const dateInput = document.querySelector("#date");
 const amountInput = document.querySelector("#amount");
+const quantityInput = document.querySelector("#quantity");
 const descriptionInput = document.querySelector("#description_raw");
+const notesInput = document.querySelector("#notes");
 const submitButton = document.querySelector("#submitButton");
 const clearLocalButton = document.querySelector("#clearLocalButton");
 const statusMessage = document.querySelector("#statusMessage");
@@ -48,10 +60,18 @@ async function handleSubmit(event) {
     date: dateInput.value,
     amount: Number(amountInput.value),
     description_raw: descriptionInput.value.trim(),
+    quantity: Number(quantityInput.value || 1),
+    notes: notesInput.value.trim(),
   };
 
-  if (!payload.date || !payload.description_raw || Number.isNaN(payload.amount)) {
-    setStatus("Заполните дату, сумму и описание.", true);
+  if (
+    !payload.date ||
+    !payload.description_raw ||
+    Number.isNaN(payload.amount) ||
+    Number.isNaN(payload.quantity) ||
+    payload.quantity < 1
+  ) {
+    setStatus("Заполните дату, сумму, количество и описание.", true);
     return;
   }
 
@@ -66,6 +86,7 @@ async function handleSubmit(event) {
     render();
     form.reset();
     dateInput.value = new Date().toISOString().slice(0, 10);
+    quantityInput.value = "1";
     setStatus("Трата сохранена.");
   } catch (error) {
     setStatus(error.message || "Не удалось сохранить трату.", true);
@@ -188,6 +209,7 @@ function sanitizeExpense(expense) {
     id: Number(expense.id) || Date.now(),
     date: String(expense.date || ""),
     amount: Number(expense.amount) || 0,
+    quantity: Math.max(1, Number(expense.quantity) || 1),
     currency: String(expense.currency || "UAH"),
     description_raw: String(expense.description_raw || ""),
     product_name: String(expense.product_name || ""),
@@ -222,7 +244,7 @@ function renderTable() {
   if (filteredExpenses.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 10;
+    cell.colSpan = 11;
     cell.textContent = "Пока нет расходов.";
     row.appendChild(cell);
     tableBody.appendChild(row);
@@ -235,13 +257,14 @@ function renderTable() {
       <td>${escapeHtml(String(expense.id))}</td>
       <td>${escapeHtml(expense.date)}</td>
       <td>${escapeHtml(expense.amount.toFixed(2))} ${escapeHtml(expense.currency)}</td>
+      <td>${escapeHtml(String(expense.quantity))}</td>
       <td>${escapeHtml(expense.description_raw)}</td>
-      <td>${escapeHtml(expense.product_name)}</td>
-      <td>${escapeHtml(expense.category)}</td>
-      <td>${escapeHtml(expense.sub_category)}</td>
-      <td>${escapeHtml(expense.sub_sub_category)}</td>
-      <td>${escapeHtml(expense.for_whom)}</td>
-      <td>${escapeHtml(expense.notes)}</td>
+      <td>${escapeHtml(shortenText(expense.product_name, 20))}</td>
+      <td>${escapeHtml(formatCategoryLabel(expense.category))}</td>
+      <td>${escapeHtml(formatCategoryLabel(expense.sub_category))}</td>
+      <td>${escapeHtml(formatCategoryLabel(expense.sub_sub_category))}</td>
+      <td>${escapeHtml(formatForWhomLabel(expense.for_whom))}</td>
+      <td>${escapeHtml(expense.notes || "—")}</td>
     `;
     tableBody.appendChild(row);
   }
@@ -284,7 +307,7 @@ function aggregateBy(field) {
   const labels = [...totals.keys()];
   const values = labels.map((label) => totals.get(label));
 
-  return { labels, values };
+  return { labels: labels.map(formatAggregateLabel), values };
 }
 
 function aggregateByDate() {
@@ -383,7 +406,7 @@ function syncSelectOptions(selectNode, values) {
   for (const value of uniqueValues) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = formatFilterLabel(selectNode, value);
     selectNode.appendChild(option);
   }
 
@@ -420,6 +443,42 @@ function setLoading(isLoading) {
 function setStatus(message, isError = false) {
   statusMessage.textContent = message;
   statusMessage.classList.toggle("error", isError);
+}
+
+function formatAggregateLabel(value) {
+  if (FOR_WHOM_LABELS[value]) {
+    return FOR_WHOM_LABELS[value];
+  }
+
+  return formatCategoryLabel(value);
+}
+
+function formatFilterLabel(selectNode, value) {
+  if (selectNode === forWhomFilter) {
+    return formatForWhomLabel(value);
+  }
+
+  return formatCategoryLabel(value);
+}
+
+function formatForWhomLabel(value) {
+  return FOR_WHOM_LABELS[value] || "Другое";
+}
+
+function formatCategoryLabel(value) {
+  if (!value || value === "other") {
+    return "Другое";
+  }
+
+  return value;
+}
+
+function shortenText(value, maxLength) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
 }
 
 function escapeHtml(value) {

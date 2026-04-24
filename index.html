@@ -57,6 +57,11 @@
               />
             </label>
 
+            <label>
+              <span>Количество</span>
+              <input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required />
+            </label>
+
             <label class="full-width">
               <span>Описание</span>
               <textarea
@@ -65,6 +70,16 @@
                 rows="4"
                 placeholder="Например: чипсы для Марка"
                 required
+              ></textarea>
+            </label>
+
+            <label class="full-width">
+              <span>Заметки</span>
+              <textarea
+                id="notes"
+                name="notes"
+                rows="3"
+                placeholder="Например: скидка, акция, взял на двоих"
               ></textarea>
             </label>
 
@@ -140,6 +155,7 @@
                   <th>ID</th>
                   <th>Дата</th>
                   <th>Сумма</th>
+                  <th>Кол-во</th>
                   <th>Описание</th>
                   <th>Товар</th>
                   <th>Категория</th>

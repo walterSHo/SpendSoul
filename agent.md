@@ -69,6 +69,7 @@ Worker должен:
   "id": 1,
   "date": "2026-04-24",
   "amount": 45.0,
+  "quantity": 2,
   "currency": "UAH",
   "description_raw": "чипсы для Марка",
   "product_name": "чипсы",
@@ -76,7 +77,7 @@ Worker должен:
   "sub_category": "вкусняшки",
   "sub_sub_category": "чипсы",
   "for_whom": "friend",
-  "notes": ""
+  "notes": "взял две упаковки"
 }
 ```
 
@@ -92,6 +93,7 @@ Worker должен:
 
 - `"myself"`
 - `"friend"`
+- `"girlfriend"`
 - `"gift"`
 - `"loan"`
 - `"household"`
@@ -105,7 +107,9 @@ Worker должен:
 
 - `date`
 - `amount`
+- `quantity`
 - `description_raw`
+- `notes`
 
 ### Поведение при сохранении
 
