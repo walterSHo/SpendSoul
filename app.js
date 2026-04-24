@@ -4,6 +4,8 @@ const ALLOWED_FOR_WHOM = new Set([
   "myself",
   "friend",
   "girlfriend",
+  "family",
+  "pet",
   "gift",
   "loan",
   "household",
@@ -13,6 +15,8 @@ const FOR_WHOM_LABELS = {
   myself: "Я",
   friend: "Друзья",
   girlfriend: "Девушка",
+  family: "Семья",
+  pet: "Животные",
   gift: "Подарок",
   loan: "Долг",
   household: "Дом",
@@ -36,12 +40,18 @@ const categoryFilter = document.querySelector("#categoryFilter");
 const forWhomFilter = document.querySelector("#forWhomFilter");
 const dateFromFilter = document.querySelector("#dateFromFilter");
 const dateToFilter = document.querySelector("#dateToFilter");
+const confirmModal = document.querySelector("#confirmModal");
+const confirmPreview = document.querySelector("#confirmPreview");
+const confirmSaveButton = document.querySelector("#confirmSaveButton");
+const cancelConfirmButton = document.querySelector("#cancelConfirmButton");
+const closeConfirmModal = document.querySelector("#closeConfirmModal");
 
 let categoryChart;
 let forWhomChart;
 let timelineChart;
 let expenses = loadExpenses();
 let filteredExpenses = [...expenses];
+let pendingExpense = null;
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 syncExpensesOnLoad();
@@ -53,6 +63,10 @@ categoryFilter.addEventListener("change", handleFiltersChange);
 forWhomFilter.addEventListener("change", handleFiltersChange);
 dateFromFilter.addEventListener("change", handleFiltersChange);
 dateToFilter.addEventListener("change", handleFiltersChange);
+confirmSaveButton.addEventListener("click", handleConfirmSave);
+cancelConfirmButton.addEventListener("click", closeConfirmDialog);
+closeConfirmModal.addEventListener("click", closeConfirmDialog);
+confirmModal.addEventListener("click", handleConfirmBackdrop);
 
 async function handleSubmit(event) {
   event.preventDefault();
@@ -78,18 +92,13 @@ async function handleSubmit(event) {
   }
 
   setLoading(true);
-  setStatus("Сохраняю и нормализую трату...");
+  setStatus("Нормализую трату...");
 
   try {
-    const normalizedExpense = await createExpense(payload);
-    expenses = upsertExpense(expenses, normalizedExpense);
-    persistExpenses(expenses);
-    syncFilterOptions();
-    render();
-    form.reset();
-    dateInput.value = new Date().toISOString().slice(0, 10);
-    quantityInput.value = "1";
-    setStatus("Трата сохранена.");
+    const normalizedExpense = await normalizeExpense(payload);
+    pendingExpense = normalizedExpense;
+    openConfirmDialog(normalizedExpense);
+    setStatus("Проверьте нормализованную трату и подтвердите сохранение.");
   } catch (error) {
     setStatus(error.message || "Не удалось сохранить трату.", true);
   } finally {
@@ -107,6 +116,12 @@ function handleClearLocalStorage() {
 
 function handleFiltersChange() {
   render();
+}
+
+function handleConfirmBackdrop(event) {
+  if (event.target.dataset.closeModal === "true") {
+    closeConfirmDialog();
+  }
 }
 
 async function createExpense(payload) {
@@ -127,6 +142,29 @@ async function createExpense(payload) {
 
   if (!response.ok) {
     throw new Error(data?.error || "Ошибка Cloudflare Worker.");
+  }
+
+  return sanitizeExpense(data);
+}
+
+async function normalizeExpense(payload) {
+  const response = await fetch(`${WORKER_BASE_URL}/api/normalize-expense`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Ошибка нормализации.");
   }
 
   return sanitizeExpense(data);
@@ -445,6 +483,64 @@ function setLoading(isLoading) {
 function setStatus(message, isError = false) {
   statusMessage.textContent = message;
   statusMessage.classList.toggle("error", isError);
+}
+
+async function handleConfirmSave() {
+  if (!pendingExpense) {
+    return;
+  }
+
+  confirmSaveButton.disabled = true;
+  confirmSaveButton.textContent = "Сохраняю...";
+
+  try {
+    const savedExpense = await createExpense(pendingExpense);
+    expenses = upsertExpense(expenses, savedExpense);
+    persistExpenses(expenses);
+    syncFilterOptions();
+    render();
+    form.reset();
+    dateInput.value = new Date().toISOString().slice(0, 10);
+    quantityInput.value = "1";
+    pendingExpense = null;
+    closeConfirmDialog();
+    setStatus("Трата сохранена.");
+  } catch (error) {
+    setStatus(error.message || "Не удалось сохранить трату.", true);
+  } finally {
+    confirmSaveButton.disabled = false;
+    confirmSaveButton.textContent = "Подтвердить";
+  }
+}
+
+function openConfirmDialog(expense) {
+  confirmPreview.innerHTML = `
+    ${renderConfirmItem("Сумма", `${expense.amount.toFixed(2)} ${expense.currency}`)}
+    ${renderConfirmItem("Количество", String(expense.quantity))}
+    ${renderConfirmItem("Товар", expense.product_name)}
+    ${renderConfirmItem("Для кого", formatForWhomLabel(expense.for_whom))}
+    ${renderConfirmItem("Категория", formatCategoryLabel(expense.category))}
+    ${renderConfirmItem("Подкатегория", formatCategoryLabel(expense.sub_category))}
+    ${renderConfirmItem("Под-подкатегория", formatCategoryLabel(expense.sub_sub_category))}
+    ${renderConfirmItem("Описание", expense.description_raw, true)}
+    ${renderConfirmItem("Заметки", expense.notes || "—", true)}
+  `;
+  confirmModal.classList.remove("hidden");
+  confirmModal.setAttribute("aria-hidden", "false");
+}
+
+function closeConfirmDialog() {
+  confirmModal.classList.add("hidden");
+  confirmModal.setAttribute("aria-hidden", "true");
+}
+
+function renderConfirmItem(label, value, isWide = false) {
+  return `
+    <div class="confirm-item ${isWide ? "confirm-item-wide" : ""}">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(value)}</span>
+    </div>
+  `;
 }
 
 function formatAggregateLabel(value) {

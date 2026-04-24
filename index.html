@@ -181,5 +181,23 @@
         </section>
       </main>
     </div>
+
+    <div id="confirmModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="modal-header">
+          <h2 id="confirmTitle">Подтверждение траты</h2>
+          <button type="button" class="modal-close" id="closeConfirmModal" aria-label="Закрыть">
+            ×
+          </button>
+        </div>
+        <p class="modal-copy">Добавляю трату в категории ниже. Подтвердить сохранение?</p>
+        <div id="confirmPreview" class="confirm-preview"></div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-button" id="cancelConfirmButton">Отмена</button>
+          <button type="button" id="confirmSaveButton">Подтвердить</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

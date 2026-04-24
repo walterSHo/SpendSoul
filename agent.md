@@ -95,6 +95,8 @@ Worker должен:
 - `"myself"`
 - `"friend"`
 - `"girlfriend"`
+- `"family"`
+- `"pet"`
 - `"gift"`
 - `"loan"`
 - `"household"`
