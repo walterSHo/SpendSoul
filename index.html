@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./style.css?v=20260426-5" />
+    <link rel="stylesheet" href="./style.css?v=20260426-6" />
     <style>
       :root {
         color-scheme: dark;
@@ -31,31 +31,33 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="./config.js?v=20260426-2"></script>
     <script src="./config.local.js?v=20260426-2"></script>
-    <script type="module" src="./app.js?v=20260426-8" defer></script>
+    <script type="module" src="./app.js?v=20260426-9" defer></script>
   </head>
   <body>
     <div class="page-shell">
       <header class="topbar">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true">
-            <span class="brand-symbol">₴</span>
-          </div>
           <div class="brand-copy">
             <p class="eyebrow">Обсерватория личных расходов</p>
-            <h1>SpendSoul</h1>
+            <h1 class="brand-title" aria-label="SpendSoul">
+              <span>S</span><span>p</span><span>e</span><span>n</span><span>d</span><span>S</span><span>o</span><span>u</span><span>l</span>
+            </h1>
             <p class="brand-note">Темная аналитическая консоль для наблюдения за расходами</p>
           </div>
         </div>
 
-        <nav class="view-tabs" aria-label="Разделы учета">
-          <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
-          <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
-          <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
-          <button type="button" class="view-tab" data-view-target="recurring">Регулярные</button>
-        </nav>
-      </header>
+        <div class="topbar-actions">
+          <div id="syncBanner" class="sync-banner" role="status" aria-live="polite">Подключаюсь к серверу...</div>
+          <button type="button" id="themeToggleButton" class="theme-toggle-button" aria-label="Переключить тему">Светлая тема</button>
 
-      <div id="syncBanner" class="sync-banner" role="status" aria-live="polite">Подключаюсь к серверу...</div>
+          <nav class="view-tabs" aria-label="Разделы учета">
+            <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
+            <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
+            <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
+            <button type="button" class="view-tab" data-view-target="recurring">Регулярные</button>
+          </nav>
+        </div>
+      </header>
 
       <div id="expensesView" class="app-view">
       <section class="latest-strip" aria-label="Последние траты">

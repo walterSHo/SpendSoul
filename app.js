@@ -127,6 +127,7 @@ const recurringTableBody = document.querySelector("#recurringTableBody");
 const expenseSearchInput = document.querySelector("#expenseSearchInput");
 const syncBanner = document.querySelector("#syncBanner");
 const quickAddButton = document.querySelector("#quickAddButton");
+const themeToggleButton = document.querySelector("#themeToggleButton");
 
 let categoryChart;
 let forWhomChart;
@@ -153,6 +154,7 @@ const customSelects = new WeakMap();
 dateInput.value = new Date().toISOString().slice(0, 10);
 incomeDateInput.value = new Date().toISOString().slice(0, 10);
 recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
+initializeTheme();
 initializeTelegramApp();
 if (hasTelegramAuth()) {
   syncExpensesOnLoad();
@@ -199,6 +201,7 @@ toggleConfirmEditButton.addEventListener("click", toggleConfirmEditor);
 confirmModal.addEventListener("click", handleConfirmBackdrop);
 viewTabs.forEach((button) => button.addEventListener("click", handleViewTabClick));
 document.addEventListener("click", handleDocumentClick);
+themeToggleButton.addEventListener("click", toggleTheme);
 
 [dateInput, incomeDateInput, dateFromFilter, dateToFilter, recurringStartDateInput].forEach(bindNativeDatePicker);
 initializeCustomSelects();
@@ -219,6 +222,22 @@ function initializeTelegramApp() {
 
   window.Telegram.WebApp.ready();
   window.Telegram.WebApp.expand();
+}
+
+function initializeTheme() {
+  const savedTheme = localStorage.getItem("spendsoul-theme") || "dark";
+  applyTheme(savedTheme === "light" ? "light" : "dark");
+}
+
+function toggleTheme() {
+  const nextTheme = document.body.dataset.theme === "light" ? "dark" : "light";
+  localStorage.setItem("spendsoul-theme", nextTheme);
+  applyTheme(nextTheme);
+}
+
+function applyTheme(theme) {
+  document.body.dataset.theme = theme;
+  themeToggleButton.textContent = theme === "light" ? "Темная тема" : "Светлая тема";
 }
 
 function hasTelegramAuth() {
@@ -1408,7 +1427,7 @@ async function syncExpensesOnLoad() {
   visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
   syncFilterOptions();
   render();
-  setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Offline mode: показываю локальный кеш" : "Сервер подключен, данные актуальны");
+  setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Локальный кеш" : "Сервер подключен");
   refreshCryptoPrices();
 }
 

@@ -36,6 +36,20 @@ body {
   background: var(--bg);
 }
 
+body[data-theme="light"] {
+  --bg: #f5f7fb;
+  --bg-soft: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #eef3fb;
+  --line: #cfd8e6;
+  --line-strong: #aebbd0;
+  --line-focus: #28364d;
+  --line-hover: rgba(40, 54, 77, 0.36);
+  --text: #111827;
+  --muted: #5d6b80;
+  --soft: #7b8798;
+}
+
 body.modal-open {
   overflow: hidden;
 }
@@ -161,6 +175,12 @@ select {
   border-top: 4px solid var(--blue);
 }
 
+.topbar-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
 .view-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -214,24 +234,32 @@ select {
 }
 
 .sync-banner {
-  margin: -10px 0 18px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--blue);
-  background: var(--panel);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .sync-banner[data-state="online"] {
-  border-left-color: var(--green);
   color: var(--green);
 }
 
 .sync-banner[data-state="offline"] {
-  border-left-color: var(--yellow);
   color: var(--yellow);
+}
+
+.theme-toggle-button {
+  min-height: 34px;
+  border-color: var(--line);
+  border-left: 4px solid var(--green);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 12px;
 }
 
 .app-view {
@@ -440,6 +468,22 @@ p {
   font-size: 44px;
   line-height: 0.96;
   letter-spacing: 0;
+}
+
+.brand-title span:nth-child(4n + 1) {
+  color: var(--blue);
+}
+
+.brand-title span:nth-child(4n + 2) {
+  color: var(--red);
+}
+
+.brand-title span:nth-child(4n + 3) {
+  color: var(--yellow);
+}
+
+.brand-title span:nth-child(4n) {
+  color: var(--green);
 }
 
 .hero-grid {
@@ -882,6 +926,11 @@ button[type="submit"]:disabled,
 .ghost-button:hover::before,
 .ghost-button:focus-visible::before {
   background: var(--yellow);
+}
+
+.month-nav-button.ghost-button::before,
+.chart-nav-button.ghost-button::before {
+  display: none;
 }
 
 .status-message {
@@ -1632,9 +1681,19 @@ tbody tr:hover .table-edit-button,
   .topbar {
     animation: none;
     transform: none;
+    flex-direction: column;
+    align-items: stretch;
     gap: 12px;
     margin-bottom: 14px;
     padding: 12px;
+  }
+
+  .topbar-actions {
+    justify-items: stretch;
+  }
+
+  .sync-banner {
+    text-align: left;
   }
 
   .brand-block {
