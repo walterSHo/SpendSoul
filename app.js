@@ -861,12 +861,6 @@ function handleViewTabClick(event) {
 
 function handleQuickAdd() {
   const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "expenses";
-
-  if (activeTarget === "expenses" && isMobileQuickSheetAvailable()) {
-    openQuickAddSheet();
-    return;
-  }
-
   const targetNode =
     activeTarget === "incomes"
       ? incomeForm
@@ -878,10 +872,6 @@ function handleQuickAdd() {
 
   targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
   targetNode.querySelector("input, textarea, select")?.focus({ preventScroll: true });
-}
-
-function isMobileQuickSheetAvailable() {
-  return Boolean(window.matchMedia?.("(max-width: 860px)").matches);
 }
 
 function openQuickAddSheet() {
