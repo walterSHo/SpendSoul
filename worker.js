@@ -15,6 +15,10 @@ const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Telegram-Init-Data,X-Telegram-Auth-Data",
 };
+const BOT_LOGIN_PREFIX = "bot_login:";
+const BOT_LOGIN_TTL_SECONDS = 300;
+const DEFAULT_SITE_URL = "https://waltersho.github.io/SpendSoul/";
+const TELEGRAM_BOT_USERNAME = "spendsoul_bot";
 
 export default {
   async fetch(request, env) {
@@ -28,7 +32,23 @@ export default {
     const url = new URL(request.url);
 
     try {
-      const authContext = url.pathname.startsWith("/api/") ? await getAuthContext(request, env) : null;
+      const authContext = url.pathname.startsWith("/api/") && !isPublicApiPath(url.pathname) ? await getAuthContext(request, env) : null;
+
+      if (request.method === "POST" && url.pathname === "/api/bot-login-token") {
+        const loginToken = await createBotLoginToken(env);
+        return jsonResponse(loginToken, 201);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/bot-login-status") {
+        const loginStatus = await getBotLoginStatus(env, url);
+        return jsonResponse(loginStatus);
+      }
+
+      if (request.method === "POST" && url.pathname === "/telegram-webhook") {
+        const update = await request.json();
+        await handleTelegramWebhook(update, env);
+        return jsonResponse({ ok: true });
+      }
 
       if (request.method === "GET" && url.pathname === "/api/expenses") {
         const expenses = await loadExpenses(env, authContext);
@@ -185,6 +205,10 @@ function getErrorStatus(error) {
   return 500;
 }
 
+function isPublicApiPath(pathname) {
+  return pathname === "/api/bot-login-token" || pathname === "/api/bot-login-status";
+}
+
 async function getAuthContext(request, env) {
   const initData = request.headers.get("X-Telegram-Init-Data") || "";
   if (initData) {
@@ -312,6 +336,160 @@ function parseTelegramUser(value) {
   } catch {
     throw new AuthorizationError("Telegram user is invalid.");
   }
+}
+
+async function createBotLoginToken(env) {
+  if (!env.EXPENSES_KV) {
+    throw new ConfigurationError("EXPENSES_KV is not configured.");
+  }
+
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const now = Math.floor(Date.now() / 1000);
+  await env.EXPENSES_KV.put(
+    getBotLoginKey(nonce),
+    JSON.stringify({
+      status: "pending",
+      created_at: now,
+      expires_at: now + BOT_LOGIN_TTL_SECONDS,
+    }),
+    { expirationTtl: BOT_LOGIN_TTL_SECONDS },
+  );
+
+  return {
+    nonce,
+    expires_at: now + BOT_LOGIN_TTL_SECONDS,
+    bot_url: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=login_${nonce}`,
+  };
+}
+
+async function getBotLoginStatus(env, url) {
+  if (!env.EXPENSES_KV) {
+    throw new ConfigurationError("EXPENSES_KV is not configured.");
+  }
+
+  const nonce = sanitizeLoginNonce(url.searchParams.get("nonce"));
+  if (!nonce) {
+    throw new RequestValidationError("nonce is required.");
+  }
+
+  const raw = await env.EXPENSES_KV.get(getBotLoginKey(nonce));
+  if (!raw) {
+    return { status: "expired" };
+  }
+
+  const loginState = JSON.parse(raw);
+  if (loginState.status !== "authorized" || !loginState.user) {
+    return { status: "pending" };
+  }
+
+  return {
+    status: "authorized",
+    auth_data: await signTelegramLoginPayload(loginState.user, env),
+  };
+}
+
+async function handleTelegramWebhook(update, env) {
+  const message = update?.message;
+  const text = String(message?.text || "");
+  const from = message?.from;
+  const chatId = message?.chat?.id;
+  const nonce = extractLoginNonce(text);
+
+  if (!nonce || !from?.id || !chatId || !env.EXPENSES_KV) {
+    return;
+  }
+
+  const raw = await env.EXPENSES_KV.get(getBotLoginKey(nonce));
+  if (!raw) {
+    await sendTelegramMessage(env, chatId, "Сессия входа устарела. Откройте SpendSoul и нажмите вход через Telegram еще раз.");
+    return;
+  }
+
+  const loginState = JSON.parse(raw);
+  await env.EXPENSES_KV.put(
+    getBotLoginKey(nonce),
+    JSON.stringify({
+      ...loginState,
+      status: "authorized",
+      authorized_at: Math.floor(Date.now() / 1000),
+      user: {
+        id: from.id,
+        first_name: String(from.first_name || ""),
+        last_name: String(from.last_name || ""),
+        username: String(from.username || ""),
+        photo_url: "",
+      },
+    }),
+    { expirationTtl: BOT_LOGIN_TTL_SECONDS },
+  );
+
+  await sendTelegramMessage(
+    env,
+    chatId,
+    `Готово, вход подтвержден. Вернитесь на SpendSoul: ${String(env.SITE_URL || DEFAULT_SITE_URL)}`,
+  );
+}
+
+function extractLoginNonce(text) {
+  const match = text.match(/^\/start\s+login_([a-f0-9]{32})$/i);
+  return match ? sanitizeLoginNonce(match[1]) : "";
+}
+
+function sanitizeLoginNonce(value) {
+  return String(value || "").match(/^[a-f0-9]{32}$/i) ? String(value).toLowerCase() : "";
+}
+
+function getBotLoginKey(nonce) {
+  return `${BOT_LOGIN_PREFIX}${nonce}`;
+}
+
+async function signTelegramLoginPayload(user, env) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new ConfigurationError("TELEGRAM_BOT_TOKEN is not configured.");
+  }
+
+  const payload = {
+    id: String(user.id),
+    auth_date: String(Math.floor(Date.now() / 1000)),
+  };
+
+  if (user.first_name) {
+    payload.first_name = String(user.first_name);
+  }
+
+  if (user.last_name) {
+    payload.last_name = String(user.last_name);
+  }
+
+  if (user.username) {
+    payload.username = String(user.username);
+  }
+
+  const dataCheckString = Object.entries(payload)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secretKey = await sha256Bytes(env.TELEGRAM_BOT_TOKEN);
+  payload.hash = bytesToHex(await hmacSha256Bytes(secretKey, dataCheckString));
+  return JSON.stringify(payload);
+}
+
+async function sendTelegramMessage(env, chatId, text) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    return;
+  }
+
+  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+    }),
+  });
 }
 
 async function hmacSha256Bytes(key, value) {

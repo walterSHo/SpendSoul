@@ -47,8 +47,16 @@ This points the browser to `http://localhost:8787` and uses `DEV_TELEGRAM_USER_I
 
 1. Create or open `@spendsoul_bot` in BotFather.
 2. Configure the Login Widget domain with BotFather `/setdomain`: use `waltersho.github.io`, not the full `/SpendSoul/` URL.
-3. Optionally configure the Mini App / Web App URL to the deployed GitHub Pages URL.
-4. Set the bot token in Cloudflare:
+3. Configure the bot webhook after deploying the Worker:
+
+```sh
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://spendsoul-api.waltershcroder.workers.dev/telegram-webhook"
+```
+
+The website can then open `@spendsoul_bot` with a one-time `/start login_...` link, so users do not need to type their phone number on the website.
+
+4. Optionally configure the Mini App / Web App URL to the deployed GitHub Pages URL.
+5. Set the bot token in Cloudflare:
 
 ```sh
 wrangler secret put TELEGRAM_BOT_TOKEN

@@ -5,6 +5,7 @@ const TELEGRAM_LOGIN_AUTH_HEADER = "X-Telegram-Auth-Data";
 const TELEGRAM_LOGIN_STORAGE_KEY = "spendsoul-telegram-login";
 const TELEGRAM_BOT_USERNAME = String(APP_CONFIG.telegramBotUsername || "spendsoul_bot").replace(/^@/, "");
 captureTelegramLoginFromUrl();
+let botLoginPollTimer = null;
 const STORAGE_OWNER_KEY = getStorageOwnerKey();
 const STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-expenses`;
 const INCOME_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-incomes`;
@@ -246,18 +247,21 @@ function renderTelegramLoginGate() {
       <div class="telegram-login-copy">
         <p class="telegram-login-label">Защищенный вход</p>
         <h3>Войдите через Telegram</h3>
-        <p>Авторизация идет через @${escapeHtml(TELEGRAM_BOT_USERNAME)}. Данные расходов будут привязаны к вашему Telegram ID.</p>
+        <p>Откройте @${escapeHtml(TELEGRAM_BOT_USERNAME)}, нажмите Start, и сайт сам подтвердит вход без ввода номера телефона.</p>
       </div>
       <div class="telegram-login-meta" aria-label="Что произойдет после входа">
         <span>Личный KV-профиль</span>
         <span>Раздельные расходы</span>
         <span>Синхронизация с Worker</span>
       </div>
-      <div id="telegramLoginButton" class="telegram-login-button"></div>
+      <button type="button" id="botLoginButton" class="telegram-bot-login-button">Открыть Telegram</button>
+      <div id="telegramLoginButton" class="telegram-login-button hidden"></div>
       <p id="telegramLoginHint" class="telegram-login-hint"></p>
     </div>
   `;
   document.body.append(gate);
+
+  document.querySelector("#botLoginButton").addEventListener("click", handleBotLoginClick);
 
   if (isLocalHost()) {
     const hint = document.querySelector("#telegramLoginHint");
@@ -277,6 +281,69 @@ function renderTelegramLoginGate() {
   script.dataset.requestAccess = "write";
   script.dataset.onauth = "handleTelegramLogin(user)";
   document.querySelector("#telegramLoginButton").append(script);
+}
+
+async function handleBotLoginClick() {
+  const button = document.querySelector("#botLoginButton");
+  const hint = document.querySelector("#telegramLoginHint");
+  const botWindow = window.open("about:blank", "_blank");
+
+  button.disabled = true;
+  button.textContent = "Открываю Telegram...";
+  hint.textContent = "Готовлю одноразовую ссылку для входа.";
+
+  try {
+    const loginToken = await createBotLoginToken();
+    if (botWindow) {
+      botWindow.location.href = loginToken.bot_url;
+    } else {
+      window.location.href = loginToken.bot_url;
+    }
+
+    button.textContent = "Жду подтверждение...";
+    hint.textContent = "В Telegram нажмите Start. Эта вкладка войдет автоматически.";
+    startBotLoginPolling(loginToken.nonce);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Открыть Telegram";
+    hint.textContent = error.message || "Не удалось открыть Telegram-вход.";
+    if (botWindow) {
+      botWindow.close();
+    }
+  }
+}
+
+function startBotLoginPolling(nonce) {
+  if (botLoginPollTimer) {
+    window.clearInterval(botLoginPollTimer);
+  }
+
+  const poll = async () => {
+    try {
+      const status = await fetchBotLoginStatus(nonce);
+      if (status.status === "authorized" && status.auth_data) {
+        window.clearInterval(botLoginPollTimer);
+        localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, status.auth_data);
+        window.location.reload();
+        return;
+      }
+
+      if (status.status === "expired") {
+        window.clearInterval(botLoginPollTimer);
+        const button = document.querySelector("#botLoginButton");
+        const hint = document.querySelector("#telegramLoginHint");
+        button.disabled = false;
+        button.textContent = "Открыть Telegram";
+        hint.textContent = "Сессия входа устарела. Нажмите кнопку еще раз.";
+      }
+    } catch {
+      const hint = document.querySelector("#telegramLoginHint");
+      hint.textContent = "Жду подтверждение в Telegram...";
+    }
+  };
+
+  poll();
+  botLoginPollTimer = window.setInterval(poll, 1800);
 }
 
 function handleTelegramLogin(user) {
@@ -996,6 +1063,28 @@ async function apiFetch(path, options = {}) {
   }
 
   return response;
+}
+
+async function createBotLoginToken() {
+  const response = await apiFetch("/api/bot-login-token", {
+    method: "POST",
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось создать Telegram-вход.");
+  }
+
+  return data;
+}
+
+async function fetchBotLoginStatus(nonce) {
+  const response = await apiFetch(`/api/bot-login-status?nonce=${encodeURIComponent(nonce)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось проверить Telegram-вход.");
+  }
+
+  return data;
 }
 
 async function createExpense(payload) {
