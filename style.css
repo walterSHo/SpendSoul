@@ -549,8 +549,7 @@ p {
 
 .hero-copy-card:hover,
 .hero-stat-card:hover,
-.panel:hover,
-.chart-card:hover {
+.panel:hover {
   background: var(--panel);
   box-shadow:
     inset 1px 0 0 var(--line-hover),
@@ -1052,8 +1051,8 @@ button.button-success-flash:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
+  padding-top: 0;
+  border-top: 0;
 }
 
 .income-balance-list span {
@@ -1276,12 +1275,18 @@ button.button-success-flash:hover {
 
 .chart-card {
   min-height: 310px;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
   padding: 18px;
   animation: soft-scale-in 420ms var(--ease-out) both;
   transition:
     border-color 180ms ease,
-    background 180ms ease,
-    transform 180ms var(--ease-soft);
+    background 180ms ease;
+}
+
+.chart-card:hover {
+  background: var(--panel);
 }
 
 .chart-card-category {
@@ -1349,6 +1354,7 @@ button.button-success-flash:hover {
   display: grid;
   gap: 6px;
   min-height: 0;
+  border: 0;
   padding: 14px;
   align-content: start;
   transition:
