@@ -376,16 +376,10 @@ select {
   min-height: 116px;
   padding: 14px;
   border-top: 4px solid var(--blue);
-  animation: soft-scale-in 360ms var(--ease-out) both;
 }
 
 .latest-expense-card:hover {
-  background: var(--panel);
-  box-shadow:
-    inset 1px 0 0 var(--line-hover),
-    inset -1px 0 0 var(--line-hover),
-    inset 0 -1px 0 var(--line-hover);
-  transform: translateY(-2px);
+  background: var(--bg-soft);
 }
 
 .latest-expense-card:nth-child(2) {
@@ -1357,21 +1351,13 @@ button.button-success-flash:hover {
   min-height: 0;
   padding: 14px;
   align-content: start;
-  animation: soft-scale-in 300ms var(--ease-out) both;
   transition:
     border-color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms var(--ease-soft);
+    background 160ms ease;
 }
 
 .week-insight-item:hover {
-  background: var(--panel);
-  box-shadow:
-    inset 1px 0 0 var(--line-hover),
-    inset -1px 0 0 var(--line-hover),
-    inset 0 -1px 0 var(--line-hover);
-  transform: translateY(-1px);
+  background: var(--bg-soft);
 }
 
 .week-insight-item span {
@@ -1847,19 +1833,13 @@ tbody tr:hover .table-edit-button,
   gap: 4px;
   min-height: 0;
   padding: 10px 12px;
-  animation: soft-scale-in 240ms var(--ease-out) both;
   transition:
     border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease;
+    background 140ms ease;
 }
 
 .confirm-item:hover {
-  background: var(--panel);
-  box-shadow:
-    inset 1px 0 0 var(--line-hover),
-    inset -1px 0 0 var(--line-hover),
-    inset 0 -1px 0 var(--line-hover);
+  background: var(--bg-soft);
 }
 
 .confirm-item strong {
