@@ -250,9 +250,7 @@ function renderTelegramLoginGate() {
     return;
   }
 
-  window.TelegramLoginWidget = {
-    dataOnauth: handleTelegramLogin,
-  };
+  window.handleTelegramLogin = handleTelegramLogin;
   const script = document.createElement("script");
   script.async = true;
   script.src = "https://telegram.org/js/telegram-widget.js?22";
@@ -261,7 +259,7 @@ function renderTelegramLoginGate() {
   script.dataset.radius = "8";
   script.dataset.userpic = "false";
   script.dataset.requestAccess = "write";
-  script.dataset.onauth = "TelegramLoginWidget.dataOnauth(user)";
+  script.dataset.onauth = "handleTelegramLogin(user)";
   document.querySelector("#telegramLoginButton").append(script);
 }
 
