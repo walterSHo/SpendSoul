@@ -250,7 +250,9 @@ function renderTelegramLoginGate() {
     return;
   }
 
-  window.handleTelegramLogin = handleTelegramLogin;
+  window.TelegramLoginWidget = {
+    dataOnauth: handleTelegramLogin,
+  };
   const script = document.createElement("script");
   script.async = true;
   script.src = "https://telegram.org/js/telegram-widget.js?22";
@@ -259,7 +261,7 @@ function renderTelegramLoginGate() {
   script.dataset.radius = "8";
   script.dataset.userpic = "false";
   script.dataset.requestAccess = "write";
-  script.dataset.authUrl = getTelegramLoginRedirectUrl();
+  script.dataset.onauth = "TelegramLoginWidget.dataOnauth(user)";
   document.querySelector("#telegramLoginButton").append(script);
 }
 
@@ -270,6 +272,12 @@ function handleTelegramLogin(user) {
 
 function captureTelegramLoginFromUrl() {
   const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  for (const [key, value] of hashParams.entries()) {
+    if (!params.has(key)) {
+      params.set(key, value);
+    }
+  }
   const id = params.get("id");
   const authDate = params.get("auth_date");
   const hash = params.get("hash");
@@ -287,10 +295,6 @@ function captureTelegramLoginFromUrl() {
 
   const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
   window.history.replaceState({}, document.title, cleanUrl);
-}
-
-function getTelegramLoginRedirectUrl() {
-  return `${window.location.origin}${window.location.pathname}`;
 }
 
 function isLocalHost() {
