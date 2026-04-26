@@ -1,5 +1,6 @@
 .DS_Store
 .dev.vars
+config.local.js
 .wrangler
 node_modules
 dist

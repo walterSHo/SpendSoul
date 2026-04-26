@@ -33,12 +33,20 @@ cp .dev.vars.example .dev.vars
 wrangler dev
 ```
 
-4. Open `index.html` through GitHub Pages or as a Telegram Mini App. On a normal website, SpendSoul shows Telegram Login for `@spendsoul_bot`; inside Telegram, it uses Mini App `initData` automatically.
+4. For local frontend testing, create an ignored local override:
+
+```sh
+cp config.local.example.js config.local.js
+```
+
+This points the browser to `http://localhost:8787` and uses `DEV_TELEGRAM_USER_ID` from the local Worker. Telegram Login Widget does not work on `localhost`.
+
+5. Open `index.html` through GitHub Pages or as a Telegram Mini App. On a normal website, SpendSoul shows Telegram Login for `@spendsoul_bot`; inside Telegram, it uses Mini App `initData` automatically.
 
 ## Telegram Setup
 
 1. Create or open `@spendsoul_bot` in BotFather.
-2. Configure the Login Widget domain with BotFather `/setdomain`.
+2. Configure the Login Widget domain with BotFather `/setdomain`: use `waltersho.github.io`, not the full `/SpendSoul/` URL.
 3. Optionally configure the Mini App / Web App URL to the deployed GitHub Pages URL.
 4. Set the bot token in Cloudflare:
 

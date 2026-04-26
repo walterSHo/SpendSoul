@@ -237,9 +237,17 @@ function renderTelegramLoginGate() {
       <h2>Войдите через Telegram</h2>
       <p>Авторизация идет через @${escapeHtml(TELEGRAM_BOT_USERNAME)}. После входа расходы будут привязаны к вашему Telegram ID.</p>
       <div id="telegramLoginButton" class="telegram-login-button"></div>
+      <p id="telegramLoginHint" class="telegram-login-hint"></p>
     </div>
   `;
   document.body.append(gate);
+
+  if (isLocalHost()) {
+    const hint = document.querySelector("#telegramLoginHint");
+    hint.textContent =
+      "Telegram Login Widget не работает на localhost. Для локальной проверки создайте config.local.js с devStorageUserId и workerBaseUrl на локальный Worker.";
+    return;
+  }
 
   window.handleTelegramLogin = handleTelegramLogin;
   const script = document.createElement("script");
@@ -257,6 +265,10 @@ function renderTelegramLoginGate() {
 function handleTelegramLogin(user) {
   localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(user));
   window.location.reload();
+}
+
+function isLocalHost() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname) || window.location.protocol === "file:";
 }
 
 async function handleSubmit(event) {
