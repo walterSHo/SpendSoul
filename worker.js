@@ -12,10 +12,11 @@ const ALLOWED_FOR_WHOM = new Set([
 
 const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Telegram-Init-Data,X-Telegram-Auth-Data",
 };
 const BOT_LOGIN_PREFIX = "bot_login:";
+const MATERIALIZED_RECURRING_PREFIX = "materialized_recurring:";
 const BOT_LOGIN_TTL_SECONDS = 300;
 const DEFAULT_SITE_URL = "https://waltersho.github.io/SpendSoul/";
 const TELEGRAM_BOT_USERNAME = "spendsoul_bot";
@@ -101,6 +102,17 @@ export default {
 
         await saveExpense(env, authContext, sanitizedExpense);
         return jsonResponse(sanitizedExpense, 201);
+      }
+
+      if (request.method === "PUT" && url.pathname.startsWith("/api/expenses/")) {
+        const id = parsePathId(url.pathname, "/api/expenses/");
+        const body = await request.json();
+        validateIncomingPayload({ ...body, id });
+
+        const sanitizedExpense = sanitizeExpense({ ...body, id }, id, body);
+
+        await saveExpense(env, authContext, sanitizedExpense);
+        return jsonResponse(sanitizedExpense);
       }
 
       if (request.method === "POST" && url.pathname === "/api/add-income") {
@@ -590,19 +602,23 @@ function validateRecurringExpensePayload(body) {
 }
 
 async function loadExpenses(env, authContext) {
-  return loadJsonRecords(env, authContext, "expenses", "expenses:");
+  const expenses = await loadJsonRecords(env, authContext, "expenses", "expenses:");
+  return expenses.map((expense) => sanitizeExpense(expense, Number(expense?.id) || getNextRecordId(0), expense));
 }
 
 async function loadIncomes(env, authContext) {
-  return loadJsonRecords(env, authContext, "incomes", "incomes:");
+  const incomes = await loadJsonRecords(env, authContext, "incomes", "incomes:");
+  return incomes.map((income) => sanitizeIncome(income, Number(income?.id) || getNextRecordId(0)));
 }
 
 async function loadCryptoAssets(env, authContext) {
-  return loadJsonRecords(env, authContext, "crypto_assets", "crypto_assets:");
+  const cryptoAssets = await loadJsonRecords(env, authContext, "crypto_assets", "crypto_assets:");
+  return cryptoAssets.map((cryptoAsset) => sanitizeCryptoAsset(cryptoAsset, Number(cryptoAsset?.id) || getNextRecordId(0)));
 }
 
 async function loadRecurringExpenses(env, authContext) {
-  return loadJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:");
+  const recurringExpenses = await loadJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:");
+  return recurringExpenses.map((recurringExpense) => sanitizeRecurringExpense(recurringExpense, Number(recurringExpense?.id) || getNextRecordId(0)));
 }
 
 async function loadJsonRecords(env, authContext, legacyKey, recordPrefix) {
@@ -1043,6 +1059,7 @@ async function materializeRecurringExpenses(env, authContext, body) {
   const currentExpenses = await loadExpenses(env, authContext);
   let nextId = await getNextExpenseId(env, authContext);
   const generatedExpenses = [];
+  const generatedPeriods = [];
   const updatedRecurringExpenses = [];
 
   for (const recurringExpense of recurringExpenses) {
@@ -1052,7 +1069,9 @@ async function materializeRecurringExpenses(env, authContext, body) {
     }
 
     const periodKey = getRecurringPeriodKey(recurringExpense.frequency, targetDate);
-    const alreadyExists = currentExpenses.some((expense) => expense?.recurring_id === recurringExpense.id && expense?.recurring_period === periodKey);
+    const alreadyExists =
+      (await hasMaterializedRecurringExpense(env, authContext, recurringExpense.id, periodKey)) ||
+      currentExpenses.some((expense) => isMatchingMaterializedRecurringExpense(expense, recurringExpense, targetDate));
 
     if (!alreadyExists) {
       const generatedExpense = sanitizeExpense(
@@ -1070,8 +1089,6 @@ async function materializeRecurringExpenses(env, authContext, body) {
           for_whom: recurringExpense.for_whom,
           notes: recurringExpense.notes,
           ai_hint: "Автоматически создано из подписки",
-          recurring_id: recurringExpense.id,
-          recurring_period: periodKey,
         },
         nextId,
         {
@@ -1084,9 +1101,12 @@ async function materializeRecurringExpenses(env, authContext, body) {
         },
       );
 
-      generatedExpense.recurring_id = recurringExpense.id;
-      generatedExpense.recurring_period = periodKey;
       generatedExpenses.push(generatedExpense);
+      generatedPeriods.push({
+        recurringId: recurringExpense.id,
+        periodKey,
+        expenseId: generatedExpense.id,
+      });
       currentExpenses.push(generatedExpense);
       nextId += 1;
     }
@@ -1099,10 +1119,51 @@ async function materializeRecurringExpenses(env, authContext, body) {
 
   if (generatedExpenses.length) {
     await Promise.all(generatedExpenses.map((expense) => saveExpense(env, authContext, expense)));
+    await Promise.all(
+      generatedPeriods.map((item) => markMaterializedRecurringPeriod(env, authContext, item.recurringId, item.periodKey, item.expenseId)),
+    );
   }
   await Promise.all(updatedRecurringExpenses.map((recurringExpense) => saveRecurringExpense(env, authContext, recurringExpense)));
 
   return generatedExpenses;
+}
+
+async function hasMaterializedRecurringExpense(env, authContext, recurringId, periodKey) {
+  if (!env.EXPENSES_KV) {
+    return false;
+  }
+
+  const raw = await env.EXPENSES_KV.get(getMaterializedRecurringKey(authContext, recurringId, periodKey));
+  return Boolean(raw);
+}
+
+async function markMaterializedRecurringPeriod(env, authContext, recurringId, periodKey, expenseId) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  await env.EXPENSES_KV.put(
+    getMaterializedRecurringKey(authContext, recurringId, periodKey),
+    JSON.stringify({
+      recurringId: Number(recurringId),
+      periodKey,
+      expenseId: Number(expenseId),
+      createdAt: new Date().toISOString(),
+    }),
+  );
+}
+
+function getMaterializedRecurringKey(authContext, recurringId, periodKey) {
+  return getUserKeyPrefix(authContext, `${MATERIALIZED_RECURRING_PREFIX}${Number(recurringId)}:${periodKey}`);
+}
+
+function isMatchingMaterializedRecurringExpense(expense, recurringExpense, targetDate) {
+  return (
+    String(expense?.date || "") === targetDate &&
+    Number(expense?.amount || 0) === Number(recurringExpense.amount || 0) &&
+    String(expense?.description_raw || "").trim() === recurringExpense.description_raw &&
+    String(expense?.ai_hint || "") === "Автоматически создано из подписки"
+  );
 }
 
 function isRecurringDue(recurringExpense, targetDate) {
@@ -1185,6 +1246,7 @@ async function resetAllData(env, authContext) {
     clearJsonRecords(env, authContext, "incomes", "incomes:"),
     clearJsonRecords(env, authContext, "crypto_assets", "crypto_assets:"),
     clearJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:"),
+    clearJsonRecords(env, authContext, "materialized_recurring", MATERIALIZED_RECURRING_PREFIX),
   ]);
 }
 

@@ -133,6 +133,7 @@ The Worker validates the Telegram signature with `TELEGRAM_BOT_TOKEN` and stores
 - `GET /api/crypto-prices?ids=bitcoin,ethereum`
 - `POST /api/normalize-expense`
 - `POST /api/add-expense`
+- `PUT /api/expenses/:id`
 - `POST /api/add-income`
 - `POST /api/add-crypto-asset`
 - `POST /api/add-recurring-expense`

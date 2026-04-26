@@ -3,6 +3,7 @@ const WORKER_BASE_URL = normalizeWorkerBaseUrl(APP_CONFIG.workerBaseUrl || "");
 const TELEGRAM_AUTH_HEADER = "X-Telegram-Init-Data";
 const TELEGRAM_LOGIN_AUTH_HEADER = "X-Telegram-Auth-Data";
 const TELEGRAM_LOGIN_STORAGE_KEY = "spendsoul-telegram-login";
+const TELEGRAM_BOT_LOGIN_PENDING_KEY = "spendsoul-bot-login-pending";
 const TELEGRAM_BOT_USERNAME = String(APP_CONFIG.telegramBotUsername || "spendsoul_bot").replace(/^@/, "");
 captureTelegramLoginFromUrl();
 let botLoginPollTimer = null;
@@ -128,6 +129,7 @@ const expenseSearchInput = document.querySelector("#expenseSearchInput");
 const syncBanner = document.querySelector("#syncBanner");
 const quickAddButton = document.querySelector("#quickAddButton");
 const themeToggleButton = document.querySelector("#themeToggleButton");
+const brandTitle = document.querySelector(".brand-title");
 
 let categoryChart;
 let forWhomChart;
@@ -142,6 +144,13 @@ let isOfflineMode = false;
 let pendingExpense = null;
 let pendingDecision = null;
 let pendingMode = "create";
+let isInitialSyncing = false;
+let recentlySavedExpenseId = null;
+let recentlySavedIncomeId = null;
+let recentlySavedCryptoAssetId = null;
+let recentlySavedRecurringExpenseId = null;
+let soulClickCount = 0;
+let soulClickTimer = null;
 let editingIncomeId = null;
 let editingCryptoAssetId = null;
 let editingRecurringExpenseId = null;
@@ -155,6 +164,7 @@ dateInput.value = new Date().toISOString().slice(0, 10);
 incomeDateInput.value = new Date().toISOString().slice(0, 10);
 recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
 initializeTheme();
+initializeSoulMode();
 initializeTelegramApp();
 if (hasTelegramAuth()) {
   syncExpensesOnLoad();
@@ -202,6 +212,7 @@ confirmModal.addEventListener("click", handleConfirmBackdrop);
 viewTabs.forEach((button) => button.addEventListener("click", handleViewTabClick));
 document.addEventListener("click", handleDocumentClick);
 themeToggleButton.addEventListener("click", toggleTheme);
+brandTitle?.addEventListener("click", handleBrandTitleClick);
 
 [dateInput, incomeDateInput, dateFromFilter, dateToFilter, recurringStartDateInput].forEach(bindNativeDatePicker);
 initializeCustomSelects();
@@ -240,12 +251,55 @@ function applyTheme(theme) {
   themeToggleButton.textContent = theme === "light" ? "Темная тема" : "Светлая тема";
 }
 
+function initializeSoulMode() {
+  const isSoulMode = localStorage.getItem("spendsoul-soul-mode") === "on";
+  document.body.dataset.soulMode = isSoulMode ? "on" : "off";
+  if (isSoulMode) {
+    setSyncState(syncBanner?.dataset.state || "online", "Soul mode активен");
+  }
+}
+
+function handleBrandTitleClick() {
+  soulClickCount += 1;
+  window.clearTimeout(soulClickTimer);
+  soulClickTimer = window.setTimeout(() => {
+    soulClickCount = 0;
+  }, 1400);
+
+  if (soulClickCount < 5) {
+    return;
+  }
+
+  soulClickCount = 0;
+  const nextMode = document.body.dataset.soulMode === "on" ? "off" : "on";
+  document.body.dataset.soulMode = nextMode;
+  localStorage.setItem("spendsoul-soul-mode", nextMode === "on" ? "on" : "off");
+  renderCharts();
+  setSyncState(syncBanner?.dataset.state || "online", nextMode === "on" ? "Soul mode включен" : "Soul mode выключен");
+  showToast(nextMode === "on" ? "Soul mode включен" : "Soul mode выключен", "success");
+}
+
 function hasTelegramAuth() {
   return Boolean(getTelegramInitData() || getTelegramLoginAuthData() || APP_CONFIG.devStorageUserId);
 }
 
-function renderTelegramLoginGate() {
-  if (hasTelegramAuth() || document.querySelector("#telegramLoginGate")) {
+function renderTelegramLoginGate(reason = "") {
+  const existingGate = document.querySelector("#telegramLoginGate");
+  if (existingGate) {
+    if (reason) {
+      const title = existingGate.querySelector("#telegramLoginTitle");
+      const copy = existingGate.querySelector("#telegramLoginCopy");
+      if (title) {
+        title.textContent = "Сессия истекла";
+      }
+      if (copy) {
+        copy.textContent = reason;
+      }
+    }
+    return;
+  }
+
+  if (hasTelegramAuth() && !reason) {
     return;
   }
 
@@ -259,19 +313,17 @@ function renderTelegramLoginGate() {
           <span class="brand-symbol">₴</span>
         </div>
         <div>
-          <p class="telegram-login-kicker">Обсерватория личных расходов</p>
           <h2>SpendSoul</h2>
+          <p>Личный вход через Telegram</p>
         </div>
       </div>
       <div class="telegram-login-copy">
-        <p class="telegram-login-label">Защищенный вход</p>
-        <h3>Войдите через Telegram</h3>
-        <p>Откройте @${escapeHtml(TELEGRAM_BOT_USERNAME)}, нажмите Start, и сайт сам подтвердит вход без ввода номера телефона.</p>
-      </div>
-      <div class="telegram-login-meta" aria-label="Что произойдет после входа">
-        <span>Личный KV-профиль</span>
-        <span>Раздельные расходы</span>
-        <span>Синхронизация с Worker</span>
+        <h3 id="telegramLoginTitle">${reason ? "Сессия истекла" : "Войдите в аккаунт"}</h3>
+        <p id="telegramLoginCopy">${
+          reason
+            ? escapeHtml(reason)
+            : `Нажмите кнопку, затем Start у @${escapeHtml(TELEGRAM_BOT_USERNAME)}. SpendSoul вернется к вашим данным автоматически.`
+        }</p>
       </div>
       <button type="button" id="botLoginButton" class="telegram-bot-login-button">Открыть Telegram</button>
       <div id="telegramLoginButton" class="telegram-login-button hidden"></div>
@@ -281,6 +333,7 @@ function renderTelegramLoginGate() {
   document.body.append(gate);
 
   document.querySelector("#botLoginButton").addEventListener("click", handleBotLoginClick);
+  resumePendingBotLogin();
 
   if (isLocalHost()) {
     const hint = document.querySelector("#telegramLoginHint");
@@ -305,31 +358,82 @@ function renderTelegramLoginGate() {
 async function handleBotLoginClick() {
   const button = document.querySelector("#botLoginButton");
   const hint = document.querySelector("#telegramLoginHint");
-  const botWindow = window.open("about:blank", "_blank");
 
   button.disabled = true;
-  button.textContent = "Открываю Telegram...";
-  hint.textContent = "Готовлю одноразовую ссылку для входа.";
+  button.textContent = "Готовлю вход...";
+  hint.textContent = "";
 
   try {
     const loginToken = await createBotLoginToken();
-    if (botWindow) {
-      botWindow.location.href = loginToken.bot_url;
-    } else {
-      window.location.href = loginToken.bot_url;
-    }
-
-    button.textContent = "Жду подтверждение...";
-    hint.textContent = "В Telegram нажмите Start. Эта вкладка войдет автоматически.";
+    rememberPendingBotLogin(loginToken);
+    openTelegramBotLogin(loginToken.bot_url);
+    button.textContent = "Жду Start в Telegram";
+    hint.innerHTML = `Не открылось? <a href="${escapeHtml(loginToken.bot_url)}" target="_blank" rel="noopener">Открыть вручную</a>`;
     startBotLoginPolling(loginToken.nonce);
   } catch (error) {
     button.disabled = false;
     button.textContent = "Открыть Telegram";
     hint.textContent = error.message || "Не удалось открыть Telegram-вход.";
-    if (botWindow) {
-      botWindow.close();
-    }
   }
+}
+
+function openTelegramBotLogin(botUrl) {
+  if (shouldOpenTelegramInCurrentTab()) {
+    window.location.href = botUrl;
+    return;
+  }
+
+  const openedWindow = window.open(botUrl, "_blank", "noopener,noreferrer");
+  if (!openedWindow) {
+    window.location.href = botUrl;
+  }
+}
+
+function shouldOpenTelegramInCurrentTab() {
+  const userAgent = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+}
+
+function rememberPendingBotLogin(loginToken) {
+  try {
+    localStorage.setItem(
+      TELEGRAM_BOT_LOGIN_PENDING_KEY,
+      JSON.stringify({
+        nonce: loginToken.nonce,
+        expires_at: Number(loginToken.expires_at) || 0,
+        bot_url: loginToken.bot_url,
+      }),
+    );
+  } catch {}
+}
+
+function getPendingBotLogin() {
+  try {
+    const pendingLogin = JSON.parse(localStorage.getItem(TELEGRAM_BOT_LOGIN_PENDING_KEY) || "null");
+    if (!pendingLogin?.nonce || Number(pendingLogin.expires_at || 0) <= Math.floor(Date.now() / 1000)) {
+      localStorage.removeItem(TELEGRAM_BOT_LOGIN_PENDING_KEY);
+      return null;
+    }
+
+    return pendingLogin;
+  } catch {
+    localStorage.removeItem(TELEGRAM_BOT_LOGIN_PENDING_KEY);
+    return null;
+  }
+}
+
+function resumePendingBotLogin() {
+  const pendingLogin = getPendingBotLogin();
+  if (!pendingLogin) {
+    return;
+  }
+
+  const button = document.querySelector("#botLoginButton");
+  const hint = document.querySelector("#telegramLoginHint");
+  button.disabled = true;
+  button.textContent = "Проверяю вход...";
+  hint.innerHTML = `Если вы еще не нажали Start, <a href="${escapeHtml(pendingLogin.bot_url)}" target="_blank" rel="noopener">откройте Telegram</a>.`;
+  startBotLoginPolling(pendingLogin.nonce);
 }
 
 function startBotLoginPolling(nonce) {
@@ -342,6 +446,7 @@ function startBotLoginPolling(nonce) {
       const status = await fetchBotLoginStatus(nonce);
       if (status.status === "authorized" && status.auth_data) {
         window.clearInterval(botLoginPollTimer);
+        localStorage.removeItem(TELEGRAM_BOT_LOGIN_PENDING_KEY);
         localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, status.auth_data);
         window.location.reload();
         return;
@@ -349,6 +454,7 @@ function startBotLoginPolling(nonce) {
 
       if (status.status === "expired") {
         window.clearInterval(botLoginPollTimer);
+        localStorage.removeItem(TELEGRAM_BOT_LOGIN_PENDING_KEY);
         const button = document.querySelector("#botLoginButton");
         const hint = document.querySelector("#telegramLoginHint");
         button.disabled = false;
@@ -472,12 +578,16 @@ async function handleIncomeSubmit(event) {
   try {
     const savedIncome = await createIncome(payload);
     incomes = upsertIncome(incomes, savedIncome);
+    recentlySavedIncomeId = savedIncome.id;
+    scheduleRecentHighlightClear();
     visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
     persistIncomes(incomes);
     renderIncomeView();
+    pulseNodes(monthlyIncomeAmount, monthlyBalanceAmount, incomeCount);
     incomeForm.reset();
     editingIncomeId = null;
     incomeDateInput.value = new Date().toISOString().slice(0, 10);
+    await flashButtonSuccess(incomeSubmitButton, "Сохранено", "Сохранить доход");
     setIncomeStatus("Доход сохранен.");
   } catch (error) {
     setIncomeStatus(error.message || "Не удалось сохранить доход.", true);
@@ -523,12 +633,15 @@ async function handleCryptoSubmit(event) {
   try {
     const savedCryptoAsset = await createCryptoAsset(payload);
     cryptoAssets = upsertCryptoAsset(cryptoAssets, savedCryptoAsset);
+    recentlySavedCryptoAssetId = savedCryptoAsset.id;
+    scheduleRecentHighlightClear();
     persistCryptoAssets(cryptoAssets);
     cryptoForm.reset();
     editingCryptoAssetId = null;
     updateCustomSelect(cryptoCoinInput);
     renderCryptoView();
     await refreshCryptoPrices();
+    await flashButtonSuccess(cryptoSubmitButton, "Сохранено", "Сохранить позицию");
     setCryptoStatus("Позиция сохранена.");
   } catch (error) {
     setCryptoStatus(error.message || "Не удалось сохранить позицию.", true);
@@ -568,6 +681,8 @@ async function handleRecurringSubmit(event) {
   try {
     const savedRecurringExpense = await createRecurringExpense(payload);
     recurringExpenses = upsertRecurringExpense(recurringExpenses, savedRecurringExpense);
+    recentlySavedRecurringExpenseId = savedRecurringExpense.id;
+    scheduleRecentHighlightClear();
     persistRecurringExpenses(recurringExpenses);
     recurringForm.reset();
     editingRecurringExpenseId = null;
@@ -575,6 +690,8 @@ async function handleRecurringSubmit(event) {
     updateCustomSelect(recurringFrequencyInput);
     updateCustomSelect(recurringForWhomInput);
     renderRecurringView();
+    pulseNodes(recurringMonthlyAmount, recurringCount);
+    await flashButtonSuccess(recurringSubmitButton, "Сохранено", "Сохранить подписку");
     setRecurringStatus("Подписка сохранена.");
   } catch (error) {
     setRecurringStatus(error.message || "Не удалось сохранить подписку.", true);
@@ -691,6 +808,14 @@ function handleQuickAdd() {
 }
 
 function handleDocumentClick(event) {
+  const emptyStateAction = event.target.closest("[data-empty-view-target]");
+  if (emptyStateAction) {
+    const target = emptyStateAction.dataset.emptyViewTarget || "expenses";
+    viewTabs.find((button) => button.dataset.viewTarget === target)?.click();
+    handleQuickAdd();
+    return;
+  }
+
   document.querySelectorAll(".custom-select.open").forEach((customSelect) => {
     if (!customSelect.contains(event.target)) {
       customSelect.classList.remove("open");
@@ -1112,8 +1237,12 @@ async function apiFetch(path, options = {}) {
     headers,
   });
 
-  if (response.status === 401 && telegramLoginAuthData) {
-    localStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
+  if (response.status === 401 && (telegramLoginAuthData || telegramInitData)) {
+    if (telegramLoginAuthData) {
+      localStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
+    }
+    renderTelegramLoginGate("Telegram-сессия истекла. Войдите заново, чтобы продолжить синхронизацию.");
+    setSyncState("offline", "Нужен повторный вход");
   }
 
   return response;
@@ -1141,9 +1270,10 @@ async function fetchBotLoginStatus(nonce) {
   return data;
 }
 
-async function createExpense(payload) {
-  const response = await apiFetch("/api/add-expense", {
-    method: "POST",
+async function saveExpenseRecord(payload, mode = "create") {
+  const isEdit = mode === "edit" && payload?.id;
+  const response = await apiFetch(isEdit ? `/api/expenses/${encodeURIComponent(payload.id)}` : "/api/add-expense", {
+    method: isEdit ? "PUT" : "POST",
     headers: {
       "Content-Type": "application/json",
     },
@@ -1486,6 +1616,10 @@ async function fetchCryptoPrices(ids) {
 }
 
 async function syncExpensesOnLoad() {
+  isInitialSyncing = !expenses.length && !incomes.length && !cryptoAssets.length && !recurringExpenses.length;
+  if (isInitialSyncing) {
+    render();
+  }
   setSyncState("loading", "Синхронизация с сервером...");
   setStatus("Загружаю данные с сервера...");
   setIncomeStatus("Загружаю доходы с сервера...");
@@ -1536,6 +1670,7 @@ async function syncExpensesOnLoad() {
 
   visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
   visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
+  isInitialSyncing = false;
   syncFilterOptions();
   render();
   setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Локальный кеш" : "Сервер подключен");
@@ -1829,6 +1964,17 @@ function renderLatestExpenses() {
 }
 
 function renderSummary() {
+  if (isInitialSyncing) {
+    renderStatSkeleton(totalAmountNode, "170px");
+    renderStatSkeleton(expenseCountNode, "130px");
+    renderStatSkeleton(latestExpenseCount, "54px");
+    monthlyWeekBreakdown.innerHTML = '<span class="skeleton-line"></span><span class="skeleton-line skeleton-line-short"></span>';
+    monthlySparkline.innerHTML = '<span class="skeleton-line"></span>';
+    monthLabel.textContent = formatMonthLabel(visibleMonthDate);
+    return;
+  }
+
+  clearStatSkeleton(totalAmountNode, expenseCountNode, latestExpenseCount);
   const monthlySummary = buildMonthlySummary(expenses, visibleMonthDate);
   totalAmountNode.textContent = `${monthlySummary.total.toFixed(2)} UAH`;
   expenseCountNode.textContent = `${monthlySummary.count} записей за месяц`;
@@ -1841,6 +1987,16 @@ function renderSummary() {
 }
 
 function renderIncomeView() {
+  if (isInitialSyncing) {
+    renderStatSkeleton(monthlyIncomeAmount, "160px");
+    renderStatSkeleton(monthlyExpenseMirror, "110px");
+    renderStatSkeleton(monthlyBalanceAmount, "120px");
+    renderStatSkeleton(incomeCount, "150px");
+    renderIncomeTable();
+    return;
+  }
+
+  clearStatSkeleton(monthlyIncomeAmount, monthlyExpenseMirror, monthlyBalanceAmount, incomeCount);
   const monthlyIncomeSummary = buildMonthlyIncomeSummary(incomes, visibleMonthDate);
   const monthlyExpenseSummary = buildMonthlySummary(expenses, visibleMonthDate);
   const balance = monthlyIncomeSummary.total - monthlyExpenseSummary.total;
@@ -1876,6 +2032,23 @@ function formatSubscriptionCountLabel(count) {
   return "активных подписок";
 }
 
+function renderStatSkeleton(node, width) {
+  if (!node) {
+    return;
+  }
+
+  node.textContent = "";
+  node.classList.add("skeleton-stat");
+  node.style.setProperty("--skeleton-width", width);
+}
+
+function clearStatSkeleton(...nodes) {
+  for (const node of nodes.filter(Boolean)) {
+    node.classList.remove("skeleton-stat");
+    node.style.removeProperty("--skeleton-width");
+  }
+}
+
 function renderIncomeTable() {
   if (!incomesTableBody) {
     return;
@@ -1883,18 +2056,21 @@ function renderIncomeTable() {
 
   incomesTableBody.innerHTML = "";
 
+  if (isInitialSyncing) {
+    renderSkeletonRows(incomesTableBody, 6, 3);
+    return;
+  }
+
   if (!incomes.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 6;
-    cell.textContent = "Пока нет поступлений.";
-    row.appendChild(cell);
-    incomesTableBody.appendChild(row);
+    renderEmptyTableState(incomesTableBody, 6, "Доходов пока нет", "Добавьте зарплату, возврат или подарок, чтобы увидеть чистый баланс месяца.", "Добавить доход", "incomes");
     return;
   }
 
   for (const income of [...incomes].sort(sortByDateDesc)) {
     const row = document.createElement("tr");
+    if (income.id === recentlySavedIncomeId) {
+      row.classList.add("row-success-pulse");
+    }
     row.innerHTML = `
       <td>${escapeHtml(String(income.id))}</td>
       <td>${escapeHtml(income.date)}</td>
@@ -1902,8 +2078,8 @@ function renderIncomeTable() {
       <td>${escapeHtml(toDisplayCase(income.source))}</td>
       <td>${escapeHtml(income.notes ? toDisplayCase(income.notes) : "—")}</td>
       <td class="table-actions-cell">
-        <button type="button" class="table-icon-button" data-edit-income-id="${escapeHtml(String(income.id))}" aria-label="Редактировать доход">✎</button>
-        <button type="button" class="table-icon-button table-danger-button" data-delete-income-id="${escapeHtml(String(income.id))}" aria-label="Удалить доход">×</button>
+        <button type="button" class="table-icon-button table-action-edit" data-edit-income-id="${escapeHtml(String(income.id))}" aria-label="Редактировать доход"></button>
+        <button type="button" class="table-icon-button table-danger-button table-action-delete" data-delete-income-id="${escapeHtml(String(income.id))}" aria-label="Удалить доход"></button>
       </td>
     `;
     incomesTableBody.appendChild(row);
@@ -1914,6 +2090,17 @@ function renderCryptoView() {
   if (!cryptoTableBody) {
     return;
   }
+
+  if (isInitialSyncing) {
+    renderStatSkeleton(cryptoCurrentValue, "170px");
+    renderStatSkeleton(cryptoInvestedValue, "110px");
+    renderStatSkeleton(cryptoProfitValue, "110px");
+    renderStatSkeleton(cryptoReturnPercent, "80px");
+    renderCryptoTable([]);
+    return;
+  }
+
+  clearStatSkeleton(cryptoCurrentValue, cryptoInvestedValue, cryptoProfitValue, cryptoReturnPercent);
 
   const portfolioRows = cryptoAssets.map(buildCryptoPortfolioRow);
   const investedTotal = cryptoAssets.reduce((sum, asset) => sum + asset.invested_amount, 0);
@@ -1936,18 +2123,21 @@ function renderCryptoView() {
 function renderCryptoTable(portfolioRows) {
   cryptoTableBody.innerHTML = "";
 
+  if (isInitialSyncing) {
+    renderSkeletonRows(cryptoTableBody, 8, 3);
+    return;
+  }
+
   if (!portfolioRows.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 8;
-    cell.textContent = "Пока нет крипто позиций.";
-    row.appendChild(cell);
-    cryptoTableBody.appendChild(row);
+    renderEmptyTableState(cryptoTableBody, 8, "Крипто портфель пуст", "Добавьте монету и вложенную сумму, а SpendSoul подтянет live-цену.", "Добавить позицию", "crypto");
     return;
   }
 
   for (const rowData of portfolioRows) {
     const row = document.createElement("tr");
+    if (rowData.asset.id === recentlySavedCryptoAssetId) {
+      row.classList.add("row-success-pulse");
+    }
     row.innerHTML = `
       <td>${escapeHtml(rowData.asset.symbol)} · ${escapeHtml(rowData.asset.name)}</td>
       <td>${escapeHtml(formatCryptoAmount(rowData.asset.amount_held))}</td>
@@ -1957,8 +2147,8 @@ function renderCryptoTable(portfolioRows) {
       <td class="${rowData.profit < 0 ? "negative-cell" : "positive-cell"}">${rowData.hasPrice ? `${escapeHtml(formatSignedAmount(rowData.profit))} UAH` : "—"}</td>
       <td>${escapeHtml(rowData.asset.notes ? toDisplayCase(rowData.asset.notes) : "—")}</td>
       <td class="table-actions-cell">
-        <button type="button" class="table-icon-button" data-edit-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Редактировать позицию">✎</button>
-        <button type="button" class="table-icon-button table-danger-button" data-delete-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Удалить позицию">×</button>
+        <button type="button" class="table-icon-button table-action-edit" data-edit-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Редактировать позицию"></button>
+        <button type="button" class="table-icon-button table-danger-button table-action-delete" data-delete-crypto-id="${escapeHtml(String(rowData.asset.id))}" aria-label="Удалить позицию"></button>
       </td>
     `;
     cryptoTableBody.appendChild(row);
@@ -1970,6 +2160,16 @@ function renderRecurringView() {
     return;
   }
 
+  if (isInitialSyncing) {
+    renderStatSkeleton(recurringMonthlyAmount, "160px");
+    renderStatSkeleton(recurringCount, "140px");
+    recurringTableBody.innerHTML = "";
+    renderSkeletonRows(recurringTableBody, 9, 3);
+    return;
+  }
+
+  clearStatSkeleton(recurringMonthlyAmount, recurringCount);
+
   const activeRecurringExpenses = recurringExpenses.filter((item) => item.active);
   const monthlyAmount = activeRecurringExpenses.reduce((sum, item) => {
     const multiplier = item.frequency === "weekly" ? 4.345 : 1;
@@ -1980,18 +2180,21 @@ function renderRecurringView() {
   recurringCount.textContent = `${activeRecurringExpenses.length} ${formatSubscriptionCountLabel(activeRecurringExpenses.length)}`;
   recurringTableBody.innerHTML = "";
 
+  if (isInitialSyncing) {
+    renderSkeletonRows(recurringTableBody, 9, 3);
+    return;
+  }
+
   if (!recurringExpenses.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 9;
-    cell.textContent = "Пока нет подписок. Если в расходе указать подписку, она появится здесь.";
-    row.appendChild(cell);
-    recurringTableBody.appendChild(row);
+    renderEmptyTableState(recurringTableBody, 9, "Подписок пока нет", "Добавьте регулярный платеж вручную или сохраните расход с категорией подписки.", "Добавить подписку", "recurring");
     return;
   }
 
   for (const recurringExpense of [...recurringExpenses].sort(sortByStartDateDesc)) {
     const row = document.createElement("tr");
+    if (recurringExpense.id === recentlySavedRecurringExpenseId) {
+      row.classList.add("row-success-pulse");
+    }
     row.innerHTML = `
       <td>${escapeHtml(String(recurringExpense.id))}</td>
       <td>${escapeHtml(recurringExpense.start_date)}</td>
@@ -2002,9 +2205,9 @@ function renderRecurringView() {
       <td>${escapeHtml(formatForWhomLabel(recurringExpense.for_whom))}</td>
       <td>${escapeHtml(recurringExpense.active ? "Активна" : "Отключена")}</td>
       <td class="table-actions-cell">
-        <button type="button" class="table-icon-button" data-toggle-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="${recurringExpense.active ? "Отключить подписку" : "Вернуть подписку"}">${recurringExpense.active ? "−" : "+"}</button>
-        <button type="button" class="table-icon-button" data-edit-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Редактировать подписку">✎</button>
-        <button type="button" class="table-icon-button table-danger-button" data-delete-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Удалить подписку">×</button>
+        <button type="button" class="table-icon-button ${recurringExpense.active ? "table-action-pause" : "table-action-restore"}" data-toggle-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="${recurringExpense.active ? "Отключить подписку" : "Вернуть подписку"}"></button>
+        <button type="button" class="table-icon-button table-action-edit" data-edit-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Редактировать подписку"></button>
+        <button type="button" class="table-icon-button table-danger-button table-action-delete" data-delete-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Удалить подписку"></button>
       </td>
     `;
     recurringTableBody.appendChild(row);
@@ -2030,18 +2233,28 @@ function buildCryptoPortfolioRow(asset) {
 function renderTable() {
   tableBody.innerHTML = "";
 
+  if (isInitialSyncing) {
+    renderSkeletonRows(tableBody, 12, 4);
+    return;
+  }
+
   if (filteredExpenses.length === 0) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 12;
-    cell.textContent = expenses.length ? "По фильтрам ничего не найдено." : "Пока нет расходов.";
-    row.appendChild(cell);
-    tableBody.appendChild(row);
+    renderEmptyTableState(
+      tableBody,
+      12,
+      expenses.length ? "Ничего не найдено" : "Расходов пока нет",
+      expenses.length ? "Попробуйте сбросить фильтры или поиск." : "Добавьте первую трату, и здесь появится нормализованная история.",
+      "Добавить трату",
+      "expenses",
+    );
     return;
   }
 
   for (const expense of filteredExpenses) {
     const row = document.createElement("tr");
+    if (expense.id === recentlySavedExpenseId) {
+      row.classList.add("row-success-pulse");
+    }
     row.innerHTML = `
       <td>${escapeHtml(String(expense.id))}</td>
       <td>${escapeHtml(expense.date)}</td>
@@ -2059,37 +2272,55 @@ function renderTable() {
         </button>
       </td>
       <td class="table-actions-cell">
-        <button type="button" class="table-icon-button table-danger-button" data-delete-expense-id="${escapeHtml(String(expense.id))}" aria-label="Удалить запись">×</button>
+        <button type="button" class="table-icon-button table-danger-button table-action-delete" data-delete-expense-id="${escapeHtml(String(expense.id))}" aria-label="Удалить запись"></button>
       </td>
     `;
     tableBody.appendChild(row);
   }
 }
 
+function renderSkeletonRows(targetBody, colSpan, count) {
+  targetBody.innerHTML = Array.from({ length: count }, (_, index) => {
+    const width = 54 + ((index * 17) % 36);
+    return `
+      <tr class="skeleton-row">
+        <td colspan="${colSpan}">
+          <span class="skeleton-line" style="width: ${width}%"></span>
+          <span class="skeleton-line skeleton-line-short"></span>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderEmptyTableState(targetBody, colSpan, title, copy, actionLabel, viewTarget) {
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = colSpan;
+  cell.innerHTML = `
+    <div class="empty-state">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(copy)}</span>
+      <button type="button" class="ghost-button empty-state-action" data-empty-view-target="${escapeHtml(viewTarget)}">${escapeHtml(actionLabel)}</button>
+    </div>
+  `;
+  row.appendChild(cell);
+  targetBody.appendChild(row);
+}
+
 function renderCharts() {
   const categoryData = aggregateBy("category");
   const forWhomData = aggregateBy("for_whom");
   const timelineData = aggregateByVisibleWeek();
+  const isSoulMode = document.body.dataset.soulMode === "on";
+  const chartColors = isSoulMode
+    ? ["#6ee7f9", "#ff4f8b", "#facc15", "#7c3aed", "#22c55e", "#fb7185"]
+    : ["#4285f4", "#ea4335", "#fbbc05", "#34a853", "#7aa2ff", "#ff6b4a"];
+  const timelineColor = isSoulMode ? "#6ee7f9" : "#4285f4";
 
-  categoryChart = renderPieChart(categoryChart, "#categoryChart", categoryData, [
-    "#4285f4",
-    "#ea4335",
-    "#fbbc05",
-    "#34a853",
-    "#7aa2ff",
-    "#ff6b4a",
-  ]);
-
-  forWhomChart = renderPieChart(forWhomChart, "#forWhomChart", forWhomData, [
-    "#4285f4",
-    "#ea4335",
-    "#fbbc05",
-    "#34a853",
-    "#7aa2ff",
-    "#ff6b4a",
-  ]);
-
-  timelineChart = renderBarChart(timelineChart, "#timelineChart", timelineData, "#4285f4");
+  categoryChart = renderPieChart(categoryChart, "#categoryChart", categoryData, chartColors);
+  forWhomChart = renderPieChart(forWhomChart, "#forWhomChart", forWhomData, chartColors);
+  timelineChart = renderBarChart(timelineChart, "#timelineChart", timelineData, timelineColor);
   renderWeekInsight(timelineData);
 }
 
@@ -2831,24 +3062,112 @@ function setRecurringLoading(isLoading) {
   recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить подписку";
 }
 
+function celebrateExpenseSave() {
+  pulseNodes(totalAmountNode, expenseCountNode, latestExpenseCount, monthlySparkline);
+  scheduleRecentHighlightClear();
+}
+
+function scheduleRecentHighlightClear() {
+  window.setTimeout(() => {
+    recentlySavedExpenseId = null;
+    recentlySavedIncomeId = null;
+    recentlySavedCryptoAssetId = null;
+    recentlySavedRecurringExpenseId = null;
+  }, 1300);
+}
+
+function pulseNodes(...nodes) {
+  for (const node of nodes.filter(Boolean)) {
+    node.classList.remove("success-pulse");
+    void node.offsetWidth;
+    node.classList.add("success-pulse");
+    window.setTimeout(() => node.classList.remove("success-pulse"), 1100);
+  }
+}
+
+async function flashButtonSuccess(button, label, resetLabel) {
+  if (!button) {
+    return;
+  }
+
+  button.classList.add("button-success-flash");
+  button.textContent = label;
+  await new Promise((resolve) => window.setTimeout(resolve, 700));
+  button.classList.remove("button-success-flash");
+  button.textContent = resetLabel;
+}
+
 function setStatus(message, isError = false) {
-  statusMessage.textContent = message;
+  statusMessage.textContent = getInlineStatusMessage(message, isError);
   statusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
 }
 
 function setIncomeStatus(message, isError = false) {
-  incomeStatusMessage.textContent = message;
+  incomeStatusMessage.textContent = getInlineStatusMessage(message, isError);
   incomeStatusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
 }
 
 function setCryptoStatus(message, isError = false) {
-  cryptoStatusMessage.textContent = message;
+  cryptoStatusMessage.textContent = getInlineStatusMessage(message, isError);
   cryptoStatusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
 }
 
 function setRecurringStatus(message, isError = false) {
-  recurringStatusMessage.textContent = message;
+  recurringStatusMessage.textContent = getInlineStatusMessage(message, isError);
   recurringStatusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
+}
+
+function getInlineStatusMessage(message, isError) {
+  if (!message || isError || isToastSuccessMessage(message)) {
+    return "";
+  }
+
+  return message;
+}
+
+function maybeShowStatusToast(message, isError) {
+  if (!message) {
+    return;
+  }
+
+  const normalized = normalizeSearchText(message);
+  if (normalized.includes("локальный кеш")) {
+    return;
+  }
+
+  const isSuccess = isToastSuccessMessage(message);
+  if (isError || isSuccess) {
+    showToast(message, isError ? "error" : "success");
+  }
+}
+
+function isToastSuccessMessage(message) {
+  return /сохран|удален|удалена|очищен|добавлена|создано|активна|отключена|обновлена/.test(normalizeSearchText(message));
+}
+
+function showToast(message, type = "success") {
+  let host = document.querySelector("#toastHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toastHost";
+    host.className = "toast-host";
+    host.setAttribute("aria-live", "polite");
+    document.body.append(host);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  host.append(toast);
+  window.setTimeout(() => toast.classList.add("toast-visible"), 20);
+  window.setTimeout(() => {
+    toast.classList.remove("toast-visible");
+    window.setTimeout(() => toast.remove(), 180);
+  }, 2800);
 }
 
 function setSyncState(state, message) {
@@ -2903,7 +3222,7 @@ async function handleConfirmSave() {
 
   try {
     const currentMode = pendingMode;
-    const savedExpense = await createExpense(pendingExpense);
+    const savedExpense = await saveExpenseRecord(pendingExpense, currentMode);
     expenses = upsertExpense(expenses, savedExpense);
     const createdSubscription = currentMode === "create" ? await maybeCreateSubscriptionFromExpense(savedExpense) : null;
     visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
@@ -2913,13 +3232,16 @@ async function handleConfirmSave() {
       recurringExpenses = upsertRecurringExpense(recurringExpenses, createdSubscription);
       persistRecurringExpenses(recurringExpenses);
     }
+    recentlySavedExpenseId = savedExpense.id;
     syncFilterOptions();
     render();
+    celebrateExpenseSave();
     if (pendingMode === "create") {
       form.reset();
       dateInput.value = new Date().toISOString().slice(0, 10);
       quantityInput.value = "1";
     }
+    await flashButtonSuccess(confirmSaveButton, "Сохранено", "Подтвердить");
     pendingExpense = null;
     pendingDecision = null;
     pendingMode = "create";
@@ -2966,7 +3288,14 @@ function closeConfirmDialog() {
 }
 
 function renderConfirmPreview(expense) {
-  confirmPreview.innerHTML = `
+  const compactFields = `
+    ${renderConfirmField("Итого", "amount", String(expense.amount), { type: "number", step: "0.01", min: "0", suffix: expense.currency })}
+    ${renderConfirmField("Товар", "product_name", expense.product_name)}
+    ${renderConfirmField("Категория", "category", expense.category)}
+    ${renderConfirmField("Для кого", "for_whom", expense.for_whom, { type: "select" })}
+  `;
+
+  const editorFields = `
     ${renderConfirmField("Дата", "date", expense.date, { type: "date" })}
     ${renderConfirmField("Итого", "amount", String(expense.amount), { type: "number", step: "0.01", min: "0", suffix: expense.currency })}
     ${renderConfirmField("Количество", "quantity", String(expense.quantity), { type: "number", step: "1", min: "1" })}
@@ -2977,6 +3306,8 @@ function renderConfirmPreview(expense) {
     ${renderConfirmField("Описание", "description_raw", expense.description_raw, { type: "textarea", wide: true, rows: "3" })}
     ${renderConfirmField("Заметки", "notes", expense.notes, { type: "textarea", wide: true, rows: "2", emptyText: "—" })}
   `;
+
+  confirmPreview.innerHTML = confirmEditorOpen ? editorFields : compactFields;
 
   if (confirmEditorOpen) {
     confirmPreview.querySelectorAll('input[type="date"]').forEach(bindNativeDatePicker);
@@ -2992,7 +3323,7 @@ function renderDecision(decision) {
     .join("");
 
   return `
-    <h3>Что сейчас сделает ИИ</h3>
+    <h3>ИИ понял так</h3>
     <p>${escapeHtml(safeDecision.summary)}</p>
     <ul>${items}</ul>
   `;
