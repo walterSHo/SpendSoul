@@ -238,12 +238,17 @@ function blockOfflineWrite(setter) {
 }
 
 function initializeTelegramApp() {
-  if (!window.Telegram?.WebApp) {
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp) {
     return;
   }
 
-  window.Telegram.WebApp.ready();
-  window.Telegram.WebApp.expand();
+  if (webApp.initData) {
+    document.body.dataset.telegramApp = "true";
+  }
+
+  webApp.ready();
+  webApp.expand();
 }
 
 function initializeTheme() {

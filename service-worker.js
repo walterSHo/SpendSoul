@@ -1,9 +1,9 @@
-const CACHE_NAME = "spendsoul-shell-20260426-1";
+const CACHE_NAME = "spendsoul-shell-20260426-2";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=20260426-15",
-  "./app.js?v=20260426-17",
+  "./style.css?v=20260426-16",
+  "./app.js?v=20260426-18",
   "./config.js?v=20260426-2",
   "./manifest.webmanifest",
   "./icons/spendsoul-icon.svg",
