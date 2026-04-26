@@ -1958,7 +1958,6 @@ tbody tr:hover .table-edit-button,
     background:
       linear-gradient(180deg, rgba(12, 17, 26, 0.96), rgba(12, 17, 26, 0.88)),
       var(--panel);
-    backdrop-filter: blur(18px);
   }
 
   body[data-theme="light"] .topbar {
@@ -2049,23 +2048,21 @@ tbody tr:hover .table-edit-button,
 
   .view-tabs {
     position: fixed;
-    inset: auto 10px max(8px, env(safe-area-inset-bottom));
+    inset: auto 0 0;
     z-index: 90;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: auto;
-    min-height: 66px;
-    padding: 5px;
-    border: 1px solid rgba(244, 247, 251, 0.08);
+    width: 100%;
+    min-height: calc(70px + env(safe-area-inset-bottom));
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
     background:
       linear-gradient(180deg, rgba(16, 23, 34, 0.94), rgba(9, 13, 20, 0.96)),
       var(--panel);
     box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(18px);
   }
 
   body[data-theme="light"] .view-tabs {
-    border-color: rgba(40, 54, 77, 0.12);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(238, 243, 251, 0.96)),
       var(--panel);
@@ -2080,10 +2077,14 @@ tbody tr:hover .table-edit-button,
     min-height: 56px;
     flex: 1 1 0;
     justify-content: center;
-    padding: 4px 3px;
+    min-width: 0;
+    padding: 4px 2px;
     background: transparent;
     font-size: 10px;
     line-height: 1.1;
+    overflow: hidden;
+    text-align: center;
+    white-space: normal;
   }
 
   .view-tab::before {
@@ -2364,7 +2365,7 @@ tbody tr:hover .table-edit-button,
   .quick-add-button {
     display: inline-grid;
     right: 18px;
-    bottom: calc(88px + env(safe-area-inset-bottom));
+    bottom: calc(92px + env(safe-area-inset-bottom));
     width: 58px;
     min-width: 58px;
     min-height: 58px;
@@ -2423,7 +2424,7 @@ tbody tr:hover .table-edit-button,
 
   body.quick-sheet-open .hero-copy-card-wide {
     position: fixed;
-    inset: auto 10px max(8px, env(safe-area-inset-bottom));
+    inset: auto 10px calc(84px + env(safe-area-inset-bottom));
     z-index: 110;
     max-height: min(86vh, 760px);
     overflow: auto;
@@ -2683,20 +2684,47 @@ tbody tr:hover .table-edit-button,
 }
 
 @media (max-width: 640px) {
+  .telegram-login-gate {
+    align-items: start;
+    padding: calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));
+    overflow: auto;
+  }
+
   .telegram-login-card {
-    padding: 22px;
+    width: 100%;
+    padding: 18px;
   }
 
   .telegram-login-brand {
     align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  .telegram-login-copy {
+    padding: 18px 0 16px;
   }
 
   .telegram-login-meta {
     grid-template-columns: 1fr;
+    margin: 18px 0;
   }
 
   .telegram-login-button,
   .telegram-login-button iframe {
     max-width: 100%;
+  }
+
+  .telegram-login-button {
+    margin-top: 14px;
+  }
+
+  .telegram-bot-login-button {
+    margin-top: 4px;
+    min-height: 56px;
+  }
+
+  .telegram-login-hint {
+    margin-top: 18px;
   }
 }
