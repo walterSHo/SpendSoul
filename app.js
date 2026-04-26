@@ -4,6 +4,7 @@ const TELEGRAM_AUTH_HEADER = "X-Telegram-Init-Data";
 const TELEGRAM_LOGIN_AUTH_HEADER = "X-Telegram-Auth-Data";
 const TELEGRAM_LOGIN_STORAGE_KEY = "spendsoul-telegram-login";
 const TELEGRAM_BOT_USERNAME = String(APP_CONFIG.telegramBotUsername || "spendsoul_bot").replace(/^@/, "");
+captureTelegramLoginFromUrl();
 const STORAGE_OWNER_KEY = getStorageOwnerKey();
 const STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-expenses`;
 const INCOME_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-incomes`;
@@ -258,13 +259,38 @@ function renderTelegramLoginGate() {
   script.dataset.radius = "8";
   script.dataset.userpic = "false";
   script.dataset.requestAccess = "write";
-  script.dataset.onauth = "handleTelegramLogin(user)";
+  script.dataset.authUrl = getTelegramLoginRedirectUrl();
   document.querySelector("#telegramLoginButton").append(script);
 }
 
 function handleTelegramLogin(user) {
   localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(user));
   window.location.reload();
+}
+
+function captureTelegramLoginFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("id");
+  const authDate = params.get("auth_date");
+  const hash = params.get("hash");
+  if (!id || !authDate || !hash) {
+    return;
+  }
+
+  const payload = {};
+  ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"].forEach((key) => {
+    if (params.has(key)) {
+      payload[key] = params.get(key);
+    }
+  });
+  localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(payload));
+
+  const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+  window.history.replaceState({}, document.title, cleanUrl);
+}
+
+function getTelegramLoginRedirectUrl() {
+  return `${window.location.origin}${window.location.pathname}`;
 }
 
 function isLocalHost() {
