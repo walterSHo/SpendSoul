@@ -1,3 +1,22 @@
+import {
+  ALLOWED_FOR_WHOM,
+  CURRENCY_LABELS,
+  FOR_WHOM_LABELS,
+  SUPPORTED_CURRENCIES,
+  escapeHtml,
+  formatCategoryLabel,
+  formatForWhomLabel,
+  normalizeQuantityValue,
+  normalizeCurrency,
+  sanitizeCryptoAsset,
+  sanitizeDecision,
+  sanitizeExpense,
+  sanitizeIncome,
+  sanitizeRecurringExpense,
+  shortenText,
+  toDisplayCase,
+} from "./app-utils.js";
+
 const APP_CONFIG = window.SPENDSOUL_CONFIG || {};
 const WORKER_BASE_URL = normalizeWorkerBaseUrl(APP_CONFIG.workerBaseUrl || "");
 const TELEGRAM_AUTH_HEADER = "X-Telegram-Init-Data";
@@ -12,29 +31,8 @@ const STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-expenses`;
 const INCOME_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-incomes`;
 const CRYPTO_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-crypto-assets`;
 const RECURRING_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-recurring-expenses`;
-const ALLOWED_FOR_WHOM = new Set([
-  "myself",
-  "friend",
-  "girlfriend",
-  "family",
-  "pet",
-  "gift",
-  "loan",
-  "household",
-  "other",
-]);
-const FOR_WHOM_LABELS = {
-  myself: "Я",
-  friend: "Друзья",
-  girlfriend: "Девушка",
-  family: "Семья",
-  pet: "Животные",
-  gift: "Подарок",
-  loan: "Долг",
-  household: "Дом",
-  other: "Другое",
-};
-
+const SETTINGS_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-settings`;
+const EXCHANGE_RATES_STORAGE_KEY = "spendsoul-exchange-rates";
 const form = document.querySelector("#expenseForm");
 const dateInput = document.querySelector("#date");
 const amountInput = document.querySelector("#amount");
@@ -79,10 +77,22 @@ const latestExpenseCount = document.querySelector("#latestExpenseCount");
 const latestExpenseCountLabel = document.querySelector("#latestExpenseCountLabel");
 const latestExpenseHint = document.querySelector("#latestExpenseHint");
 const latestExpenseList = document.querySelector("#latestExpenseList");
+const todayTotalAmount = document.querySelector("#todayTotalAmount");
+const todayLimitStatus = document.querySelector("#todayLimitStatus");
+const todayLimitMeter = document.querySelector("#todayLimitMeter");
+const todayExpenseCount = document.querySelector("#todayExpenseCount");
+const todayMonthTotal = document.querySelector("#todayMonthTotal");
+const quickExpenseForm = document.querySelector("#quickExpenseForm");
+const quickEntryType = document.querySelector("#quickEntryType");
+const quickExpenseInput = document.querySelector("#quickExpenseInput");
+const quickExpenseSubmitButton = document.querySelector("#quickExpenseSubmitButton");
+const quickExpenseStatusMessage = document.querySelector("#quickExpenseStatusMessage");
 const viewTabs = [...document.querySelectorAll(".view-tab")];
+const todayView = document.querySelector("#todayView");
 const expensesView = document.querySelector("#expensesView");
 const incomesView = document.querySelector("#incomesView");
 const cryptoView = document.querySelector("#cryptoView");
+const settingsView = document.querySelector("#settingsView");
 const incomeForm = document.querySelector("#incomeForm");
 const incomeDateInput = document.querySelector("#incomeDate");
 const incomeAmountInput = document.querySelector("#incomeAmount");
@@ -125,6 +135,21 @@ const recurringStatusMessage = document.querySelector("#recurringStatusMessage")
 const recurringMonthlyAmount = document.querySelector("#recurringMonthlyAmount");
 const recurringCount = document.querySelector("#recurringCount");
 const recurringTableBody = document.querySelector("#recurringTableBody");
+const settingsForm = document.querySelector("#settingsForm");
+const dailyLimitInput = document.querySelector("#dailyLimitInput");
+const monthlyLimitInput = document.querySelector("#monthlyLimitInput");
+const categoryCatalogInput = document.querySelector("#categoryCatalogInput");
+const defaultCurrencyInput = document.querySelector("#defaultCurrencyInput");
+const displayCurrencyInput = document.querySelector("#displayCurrencyInput");
+const settingsSubmitButton = document.querySelector("#settingsSubmitButton");
+const refreshExchangeRatesButton = document.querySelector("#refreshExchangeRatesButton");
+const exchangeRateStatusMessage = document.querySelector("#exchangeRateStatusMessage");
+const settingsStatusMessage = document.querySelector("#settingsStatusMessage");
+const monthlyLimitProgress = document.querySelector("#monthlyLimitProgress");
+const monthlyLimitStatus = document.querySelector("#monthlyLimitStatus");
+const settingsTodayTotal = document.querySelector("#settingsTodayTotal");
+const settingsMonthTotal = document.querySelector("#settingsMonthTotal");
+const categoryCatalogList = document.querySelector("#categoryCatalogList");
 const expenseSearchInput = document.querySelector("#expenseSearchInput");
 const syncBanner = document.querySelector("#syncBanner");
 const quickAddButton = document.querySelector("#quickAddButton");
@@ -140,6 +165,8 @@ let expenses = loadExpenses();
 let incomes = loadIncomes();
 let cryptoAssets = loadCryptoAssets();
 let recurringExpenses = loadRecurringExpenses();
+let appSettings = loadSettings();
+let exchangeRates = loadExchangeRates();
 let cryptoPrices = {};
 let filteredExpenses = [...expenses];
 let isOfflineMode = false;
@@ -179,6 +206,7 @@ if (hasTelegramAuth()) {
   setIncomeStatus("Войдите через Telegram, чтобы загрузить доходы.", true);
   setCryptoStatus("Войдите через Telegram, чтобы загрузить крипто портфель.", true);
   setRecurringStatus("Войдите через Telegram, чтобы загрузить подписки.", true);
+  setSettingsStatus("Войдите через Telegram, чтобы синхронизировать настройки.", true);
 }
 render();
 renderTelegramLoginGate();
@@ -188,9 +216,12 @@ window.setTimeout(() => {
 }, 600);
 
 form.addEventListener("submit", handleSubmit);
+quickExpenseForm?.addEventListener("submit", handleQuickExpenseSubmit);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
 cryptoForm.addEventListener("submit", handleCryptoSubmit);
 recurringForm.addEventListener("submit", handleRecurringSubmit);
+settingsForm?.addEventListener("submit", handleSettingsSubmit);
+refreshExchangeRatesButton?.addEventListener("click", handleRefreshExchangeRates);
 clearLocalButton?.addEventListener("click", handleClearLocalStorage);
 resetServerButton?.addEventListener("click", handleResetServerData);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
@@ -335,9 +366,7 @@ function renderTelegramLoginGate(reason = "") {
   gate.innerHTML = `
     <div class="telegram-login-card">
       <div class="telegram-login-brand">
-        <div class="brand-mark telegram-login-mark" aria-hidden="true">
-          <span class="brand-symbol">₴</span>
-        </div>
+        <img class="brand-mark telegram-login-mark" src="./icons/spendsoul-icon.svg" alt="SpendSoul" />
         <div>
           <h2>SpendSoul</h2>
           <p>Личный вход через Telegram</p>
@@ -578,6 +607,7 @@ async function handleSubmit(event) {
   const payload = {
     date: dateInput.value,
     amount: Number(amountInput.value),
+    currency: appSettings.default_currency,
     description_raw: descriptionInput.value.trim(),
     quantity: Number(quantityInput.value || 1),
     notes: notesInput.value.trim(),
@@ -617,6 +647,98 @@ async function handleSubmit(event) {
   }
 }
 
+async function handleQuickExpenseSubmit(event) {
+  event.preventDefault();
+
+  const entryType = quickEntryType?.value || "expense";
+  const parsedExpense = parseQuickExpenseInput(quickExpenseInput.value);
+  if (!parsedExpense) {
+    setQuickExpenseStatus(
+      entryType === "crypto" ? "Для крипты: btc 0.01 12000 или sol 2 5000." : "Напишите описание и сумму: например, кофе 80.",
+      true,
+    );
+    return;
+  }
+
+  if (blockOfflineWrite(setQuickExpenseStatus)) {
+    return;
+  }
+
+  quickExpenseSubmitButton.disabled = true;
+  quickExpenseSubmitButton.textContent = "Понимаю...";
+  setQuickExpenseStatus("Обрабатываю быстрый ввод...");
+
+  try {
+    if (entryType === "income") {
+      const savedIncome = await createIncome({
+        date: parsedExpense.date,
+        amount: parsedExpense.amount,
+        currency: parsedExpense.currency,
+        source: parsedExpense.description_raw,
+        notes: "Быстрый ввод",
+      });
+      incomes = upsertIncome(incomes, savedIncome);
+      persistIncomes(incomes);
+      quickExpenseInput.value = "";
+      render();
+      await flashButtonSuccess(quickExpenseSubmitButton, "Сохранено", "Добавить");
+      setQuickExpenseStatus("Доход сохранён.");
+      return;
+    }
+
+    if (entryType === "recurring") {
+      const savedRecurringExpense = await createRecurringExpense({
+        start_date: parsedExpense.date,
+        amount: parsedExpense.amount,
+        currency: parsedExpense.currency,
+        description_raw: parsedExpense.description_raw,
+        category: "подписки",
+        sub_category: "подписки",
+        for_whom: "myself",
+        frequency: "monthly",
+        notes: "Быстрый ввод",
+        active: true,
+      });
+      recurringExpenses = upsertRecurringExpense(recurringExpenses, savedRecurringExpense);
+      persistRecurringExpenses(recurringExpenses);
+      quickExpenseInput.value = "";
+      render();
+      await flashButtonSuccess(quickExpenseSubmitButton, "Сохранено", "Добавить");
+      setQuickExpenseStatus("Подписка сохранена.");
+      return;
+    }
+
+    if (entryType === "crypto") {
+      const cryptoPayload = parseQuickCryptoInput(quickExpenseInput.value);
+      if (!cryptoPayload) {
+        setQuickExpenseStatus("Для крипты: btc 0.01 12000 или sol 2 5000.", true);
+        return;
+      }
+      const savedCryptoAsset = await createCryptoAsset(cryptoPayload);
+      cryptoAssets = upsertCryptoAsset(cryptoAssets, savedCryptoAsset);
+      persistCryptoAssets(cryptoAssets);
+      quickExpenseInput.value = "";
+      render();
+      await refreshCryptoPrices();
+      await flashButtonSuccess(quickExpenseSubmitButton, "Сохранено", "Добавить");
+      setQuickExpenseStatus("Крипто позиция сохранена.");
+      return;
+    }
+
+    const normalizedResult = await normalizeExpense(parsedExpense);
+    pendingMode = "create";
+    pendingExpense = normalizedResult.expense;
+    pendingDecision = normalizedResult.decision;
+    openConfirmDialog(normalizedResult.expense, normalizedResult.decision);
+    setQuickExpenseStatus("Проверьте запись и подтвердите сохранение.");
+  } catch (error) {
+    setQuickExpenseStatus(error.message || "Не удалось обработать быстрый ввод.", true);
+  } finally {
+    quickExpenseSubmitButton.disabled = false;
+    quickExpenseSubmitButton.textContent = "Добавить";
+  }
+}
+
 async function handleIncomeSubmit(event) {
   event.preventDefault();
 
@@ -624,7 +746,7 @@ async function handleIncomeSubmit(event) {
     id: editingIncomeId,
     date: incomeDateInput.value,
     amount: Number(incomeAmountInput.value),
-    currency: "UAH",
+    currency: appSettings.default_currency,
     source: incomeSourceInput.value.trim(),
     notes: incomeNotesInput.value.trim(),
   };
@@ -659,6 +781,66 @@ async function handleIncomeSubmit(event) {
     setIncomeStatus(error.message || "Не удалось сохранить доход.", true);
   } finally {
     setIncomeLoading(false);
+  }
+}
+
+async function handleSettingsSubmit(event) {
+  event.preventDefault();
+
+  const nextSettings = sanitizeSettings({
+    daily_limit: Number(dailyLimitInput.value) || 0,
+    monthly_limit: Number(monthlyLimitInput.value) || 0,
+    default_currency: defaultCurrencyInput.value,
+    display_currency: displayCurrencyInput.value,
+    category_catalog: categoryCatalogInput.value
+      .split(/\n|,/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  });
+
+  if (blockOfflineWrite(setSettingsStatus)) {
+    appSettings = nextSettings;
+    persistSettings(appSettings);
+    renderSettingsView();
+    return;
+  }
+
+  settingsSubmitButton.disabled = true;
+  setSettingsStatus("Сохраняю настройки...");
+
+  try {
+    appSettings = await saveSettings(nextSettings);
+    persistSettings(appSettings);
+    renderSettingsView();
+    await flashButtonSuccess(settingsSubmitButton, "Сохранено", "Сохранить настройки");
+    setSettingsStatus("Настройки сохранены.");
+  } catch (error) {
+    appSettings = nextSettings;
+    persistSettings(appSettings);
+    renderSettingsView();
+    setSettingsStatus(error.message || "Настройки сохранены локально.", true);
+  } finally {
+    settingsSubmitButton.disabled = false;
+  }
+}
+
+async function handleRefreshExchangeRates() {
+  if (refreshExchangeRatesButton) {
+    refreshExchangeRatesButton.disabled = true;
+  }
+  setSettingsStatus("Обновляю курсы...");
+
+  try {
+    exchangeRates = await fetchExchangeRates();
+    persistExchangeRates(exchangeRates);
+    render();
+    setSettingsStatus("Курсы обновлены.");
+  } catch (error) {
+    setSettingsStatus(error.message || "Не удалось обновить курсы.", true);
+  } finally {
+    if (refreshExchangeRatesButton) {
+      refreshExchangeRatesButton.disabled = false;
+    }
   }
 }
 
@@ -723,6 +905,7 @@ async function handleRecurringSubmit(event) {
     id: editingRecurringExpenseId,
     start_date: recurringStartDateInput.value,
     amount: Number(recurringAmountInput.value),
+    currency: appSettings.default_currency,
     description_raw: recurringDescriptionInput.value.trim(),
     category: recurringCategoryInput.value.trim() || "подписки",
     sub_category: recurringSubCategoryInput.value.trim() || "подписки",
@@ -801,10 +984,12 @@ function handleClearLocalStorage() {
   localStorage.removeItem(INCOME_STORAGE_KEY);
   localStorage.removeItem(CRYPTO_STORAGE_KEY);
   localStorage.removeItem(RECURRING_STORAGE_KEY);
+  localStorage.removeItem(SETTINGS_STORAGE_KEY);
   expenses = [];
   incomes = [];
   cryptoAssets = [];
   recurringExpenses = [];
+  appSettings = sanitizeSettings({});
   cryptoPrices = {};
   visibleWeekStart = getStartOfWeek(new Date());
   visibleMonthDate = getStartOfMonth(new Date());
@@ -814,6 +999,7 @@ function handleClearLocalStorage() {
   setIncomeStatus("Локальный кеш очищен.");
   setCryptoStatus("Локальный кеш очищен.");
   setRecurringStatus("Локальный кеш очищен.");
+  setSettingsStatus("Локальный кеш очищен.");
 }
 
 async function handleResetServerData() {
@@ -848,27 +1034,34 @@ async function handleResetServerData() {
 function handleViewTabClick(event) {
   closeQuickAddSheet();
   const target = event.currentTarget.dataset.viewTarget;
+  const isTodayView = target === "today";
   const isIncomeView = target === "incomes";
   const isCryptoView = target === "crypto";
-  const isRecurringView = target === "recurring";
+  const isSettingsView = target === "settings";
 
-  expensesView.classList.toggle("hidden", isIncomeView || isCryptoView || isRecurringView);
+  todayView?.classList.toggle("hidden", !isTodayView);
+  expensesView.classList.toggle("hidden", isTodayView || isIncomeView || isCryptoView || isSettingsView);
   incomesView.classList.toggle("hidden", !isIncomeView);
   cryptoView.classList.toggle("hidden", !isCryptoView);
-  recurringView.classList.toggle("hidden", !isRecurringView);
+  recurringView.classList.toggle("hidden", !isSettingsView);
+  settingsView?.classList.toggle("hidden", !isSettingsView);
   viewTabs.forEach((button) => button.classList.toggle("active", button.dataset.viewTarget === target));
 }
 
 function handleQuickAdd() {
-  const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "expenses";
+  const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "today";
   const targetNode =
-    activeTarget === "incomes"
-      ? incomeForm
-      : activeTarget === "crypto"
-        ? cryptoForm
-        : activeTarget === "recurring"
-          ? recurringForm
-          : form;
+    activeTarget === "today"
+      ? quickExpenseForm
+      : activeTarget === "expenses"
+        ? form
+        : activeTarget === "incomes"
+          ? incomeForm
+          : activeTarget === "crypto"
+            ? cryptoForm
+            : activeTarget === "settings"
+            ? settingsForm
+            : quickExpenseForm || form;
 
   targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
   targetNode.querySelector("input, textarea, select")?.focus({ preventScroll: true });
@@ -1448,6 +1641,29 @@ async function createRecurringExpense(payload) {
   return sanitizeRecurringExpense(data);
 }
 
+async function saveSettings(payload) {
+  const response = await apiFetch("/api/settings", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось сохранить настройки.");
+  }
+
+  return sanitizeSettings(data);
+}
+
 async function maybeCreateSubscriptionFromExpense(expense) {
   if (!isSubscriptionExpense(expense) || hasMatchingSubscription(expense)) {
     return null;
@@ -1522,6 +1738,108 @@ function buildSubscriptionNote(expense) {
   const notes = String(expense.notes || "").trim();
   const source = `Автоматически добавлено из расхода №${expense.id}.`;
   return notes ? `${source} ${notes}` : source;
+}
+
+function parseQuickExpenseInput(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  const amountMatch = rawValue.match(/(?:^|\s)(\d+(?:[.,]\d{1,2})?)(?:\s*(?:uah|usd|eur|pln|rub|грн|₴|\$|€|zł|₽|руб))?(?=\s|$)/i);
+  if (!amountMatch) {
+    return null;
+  }
+
+  const amount = Number(amountMatch[1].replace(",", "."));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  const description = rawValue
+    .replace(amountMatch[0], " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!description) {
+    return null;
+  }
+
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    amount,
+    currency: inferQuickInputCurrency(rawValue),
+    quantity: 1,
+    description_raw: description,
+    notes: "Быстрый ввод",
+    ai_hint: buildQuickInputHint(description),
+  };
+}
+
+function parseQuickCryptoInput(value) {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const coinToken = parts[0].toLowerCase();
+  const amountHeld = Number(parts[1].replace(",", "."));
+  const investedAmount = Number(parts[2].replace(",", "."));
+  const coins = {
+    btc: { coingecko_id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
+    bitcoin: { coingecko_id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
+    eth: { coingecko_id: "ethereum", symbol: "ETH", name: "Ethereum" },
+    ethereum: { coingecko_id: "ethereum", symbol: "ETH", name: "Ethereum" },
+    sol: { coingecko_id: "solana", symbol: "SOL", name: "Solana" },
+    solana: { coingecko_id: "solana", symbol: "SOL", name: "Solana" },
+    ton: { coingecko_id: "toncoin", symbol: "TON", name: "Toncoin" },
+    usdt: { coingecko_id: "tether", symbol: "USDT", name: "Tether" },
+    usdc: { coingecko_id: "usd-coin", symbol: "USDC", name: "USD Coin" },
+    bnb: { coingecko_id: "binancecoin", symbol: "BNB", name: "BNB" },
+  };
+  const coin = coins[coinToken];
+  if (!coin || !Number.isFinite(amountHeld) || amountHeld <= 0 || !Number.isFinite(investedAmount) || investedAmount < 0) {
+    return null;
+  }
+
+  return {
+    ...coin,
+    amount_held: amountHeld,
+    invested_amount: investedAmount,
+    currency: appSettings.default_currency,
+    notes: parts.slice(3).join(" "),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function inferQuickInputCurrency(value) {
+  const lowered = String(value || "").toLowerCase();
+  if (/(?:\$|usd|dollar|dollars|бакс|баксы|доллар)/i.test(lowered)) {
+    return "USD";
+  }
+  if (/(?:€|eur|euro|евро)/i.test(lowered)) {
+    return "EUR";
+  }
+  if (/(?:zł|pln|злот)/i.test(lowered)) {
+    return "PLN";
+  }
+  if (/(?:rub|ruble|rubles|₽|руб)/i.test(lowered)) {
+    return "RUB";
+  }
+  if (/(?:₴|uah|грн|грив)/i.test(lowered)) {
+    return "UAH";
+  }
+  return appSettings.default_currency;
+}
+
+function buildQuickInputHint(description) {
+  const catalogHint = appSettings.category_catalog.length
+    ? `Используй справочник категорий, если подходит: ${appSettings.category_catalog.join(", ")}.`
+    : "";
+  return ["Запись создана из быстрого ввода в одну строку.", catalogHint].filter(Boolean).join(" ");
 }
 
 async function deleteServerItem(resource, id) {
@@ -1679,6 +1997,41 @@ async function fetchRecurringExpenses() {
   return data.map(sanitizeRecurringExpense).sort(sortByStartDateDesc);
 }
 
+async function fetchSettings() {
+  const response = await apiFetch("/api/settings");
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Не удалось прочитать настройки с сервера.");
+  }
+
+  if (!response.ok || !data || typeof data !== "object") {
+    throw new Error(data?.error || "Не удалось загрузить настройки.");
+  }
+
+  return sanitizeSettings(data);
+}
+
+async function fetchExchangeRates() {
+  const symbols = [...SUPPORTED_CURRENCIES].filter((currency) => currency !== "UAH");
+  const response = await apiFetch(`/api/exchange-rates?symbols=${encodeURIComponent(symbols.join(","))}`);
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Не удалось прочитать курсы валют.");
+  }
+
+  if (!response.ok || !data?.rates) {
+    throw new Error(data?.error || "Не удалось загрузить курсы валют.");
+  }
+
+  return sanitizeExchangeRates(data);
+}
+
 async function fetchCryptoPrices(ids) {
   if (!ids.length) {
     return {};
@@ -1711,11 +2064,14 @@ async function syncExpensesOnLoad() {
   setCryptoStatus("Загружаю крипто портфель...");
   setRecurringStatus("Загружаю подписки...");
 
-  const [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult] = await Promise.allSettled([
+  const [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult, settingsSyncResult, exchangeRateSyncResult] =
+    await Promise.allSettled([
     fetchExpenses(),
     fetchIncomes(),
     fetchCryptoAssets(),
     fetchRecurringExpenses(),
+    fetchSettings(),
+    fetchExchangeRates(),
   ]);
   const syncResults = [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult];
   const failedSyncCount = syncResults.filter((result) => result.status === "rejected").length;
@@ -1751,6 +2107,19 @@ async function syncExpensesOnLoad() {
     setRecurringStatus("Подписки синхронизированы.");
   } else {
     setRecurringStatus(recurringSyncResult.reason?.message || "Не удалось синхронизировать подписки.", true);
+  }
+
+  if (settingsSyncResult.status === "fulfilled") {
+    appSettings = settingsSyncResult.value;
+    persistSettings(appSettings);
+    setSettingsStatus("Настройки синхронизированы.");
+  } else {
+    setSettingsStatus(settingsSyncResult.reason?.message || "Не удалось синхронизировать настройки.", true);
+  }
+
+  if (exchangeRateSyncResult.status === "fulfilled") {
+    exchangeRates = exchangeRateSyncResult.value;
+    persistExchangeRates(exchangeRates);
   }
 
   visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
@@ -1835,6 +2204,24 @@ function loadRecurringExpenses() {
   }
 }
 
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return sanitizeSettings(raw ? JSON.parse(raw) : {});
+  } catch {
+    return sanitizeSettings({});
+  }
+}
+
+function loadExchangeRates() {
+  try {
+    const raw = localStorage.getItem(EXCHANGE_RATES_STORAGE_KEY);
+    return sanitizeExchangeRates(raw ? JSON.parse(raw) : {});
+  } catch {
+    return sanitizeExchangeRates({});
+  }
+}
+
 function persistExpenses(nextExpenses) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(nextExpenses));
 }
@@ -1849,6 +2236,14 @@ function persistCryptoAssets(nextCryptoAssets) {
 
 function persistRecurringExpenses(nextRecurringExpenses) {
   localStorage.setItem(RECURRING_STORAGE_KEY, JSON.stringify(nextRecurringExpenses));
+}
+
+function persistSettings(nextSettings) {
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(sanitizeSettings(nextSettings)));
+}
+
+function persistExchangeRates(nextExchangeRates) {
+  localStorage.setItem(EXCHANGE_RATES_STORAGE_KEY, JSON.stringify(sanitizeExchangeRates(nextExchangeRates)));
 }
 
 function upsertExpense(currentExpenses, incomingExpense) {
@@ -1914,72 +2309,37 @@ function mergeRecurringExpenses(primaryRecurringExpenses, fallbackRecurringExpen
   return [...merged.values()].sort(sortByStartDateDesc);
 }
 
-function sanitizeExpense(expense) {
-  const safeExpense = expense || {};
+function sanitizeSettings(settings) {
+  const safeSettings = settings || {};
+  const categoryCatalog = Array.isArray(safeSettings.category_catalog)
+    ? safeSettings.category_catalog
+    : String(safeSettings.category_catalog || "")
+        .split(/\n|,/)
+        .map((value) => value.trim());
 
   return {
-    id: Number(safeExpense.id) || Date.now(),
-    date: String(safeExpense.date || ""),
-    amount: Number(safeExpense.amount) || 0,
-    quantity: normalizeQuantityValue(safeExpense.quantity),
-    currency: String(safeExpense.currency || "UAH"),
-    description_raw: String(safeExpense.description_raw || ""),
-    product_name: String(safeExpense.product_name || ""),
-    category: String(safeExpense.category || "other"),
-    sub_category: String(safeExpense.sub_category || "other"),
-    sub_sub_category: String(safeExpense.sub_sub_category || "other"),
-    for_whom: ALLOWED_FOR_WHOM.has(safeExpense.for_whom) ? safeExpense.for_whom : "other",
-    notes: String(safeExpense.notes || ""),
-    ai_hint: String(safeExpense.ai_hint || ""),
+    daily_limit: Math.max(0, Number(safeSettings.daily_limit) || 0),
+    monthly_limit: Math.max(0, Number(safeSettings.monthly_limit) || 0),
+    default_currency: normalizeCurrency(safeSettings.default_currency, "UAH"),
+    display_currency: normalizeCurrency(safeSettings.display_currency, "USD"),
+    category_catalog: [...new Set(categoryCatalog.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))].sort(),
   };
 }
 
-function sanitizeIncome(income) {
-  const safeIncome = income || {};
+function sanitizeExchangeRates(data) {
+  const safeRates = data?.rates || data || {};
+  const rates = { UAH: 1 };
+  for (const currency of SUPPORTED_CURRENCIES) {
+    const rate = Number(safeRates[currency]);
+    if (Number.isFinite(rate) && rate > 0) {
+      rates[currency] = rate;
+    }
+  }
 
   return {
-    id: Number(safeIncome.id) || Date.now(),
-    date: String(safeIncome.date || ""),
-    amount: Number(safeIncome.amount) || 0,
-    currency: String(safeIncome.currency || "UAH"),
-    source: String(safeIncome.source || ""),
-    notes: String(safeIncome.notes || ""),
-  };
-}
-
-function sanitizeCryptoAsset(cryptoAsset) {
-  const safeCryptoAsset = cryptoAsset || {};
-
-  return {
-    id: Number(safeCryptoAsset.id) || Date.now(),
-    name: String(safeCryptoAsset.name || ""),
-    symbol: String(safeCryptoAsset.symbol || "").toUpperCase(),
-    coingecko_id: String(safeCryptoAsset.coingecko_id || "").toLowerCase(),
-    amount_held: Number(safeCryptoAsset.amount_held) || 0,
-    invested_amount: Number(safeCryptoAsset.invested_amount) || 0,
-    currency: String(safeCryptoAsset.currency || "UAH"),
-    notes: String(safeCryptoAsset.notes || ""),
-    updated_at: String(safeCryptoAsset.updated_at || ""),
-  };
-}
-
-function sanitizeRecurringExpense(recurringExpense) {
-  const safeRecurringExpense = recurringExpense || {};
-  const frequency = String(safeRecurringExpense.frequency || "monthly");
-
-  return {
-    id: Number(safeRecurringExpense.id) || Date.now(),
-    start_date: String(safeRecurringExpense.start_date || new Date().toISOString().slice(0, 10)),
-    amount: Number((Number(safeRecurringExpense.amount) || 0).toFixed(2)),
-    currency: String(safeRecurringExpense.currency || "UAH"),
-    description_raw: String(safeRecurringExpense.description_raw || "").trim(),
-    category: String(safeRecurringExpense.category || "подписки").trim(),
-    sub_category: String(safeRecurringExpense.sub_category || "подписки").trim(),
-    for_whom: ALLOWED_FOR_WHOM.has(String(safeRecurringExpense.for_whom || "")) ? String(safeRecurringExpense.for_whom) : "myself",
-    frequency: frequency === "weekly" ? "weekly" : "monthly",
-    notes: String(safeRecurringExpense.notes || ""),
-    active: safeRecurringExpense.active !== false,
-    last_materialized_at: String(safeRecurringExpense.last_materialized_at || ""),
+    base: "UAH",
+    rates,
+    updated_at: String(data?.updated_at || new Date().toISOString()),
   };
 }
 
@@ -1997,16 +2357,104 @@ function sortByStartDateDesc(left, right) {
   return (Number(right?.id) || 0) - (Number(left?.id) || 0);
 }
 
+function convertMoney(amount, fromCurrency, toCurrency) {
+  const from = normalizeCurrency(fromCurrency, appSettings.default_currency);
+  const to = normalizeCurrency(toCurrency, appSettings.display_currency);
+  const numericAmount = Number(amount) || 0;
+  if (from === to) {
+    return numericAmount;
+  }
+
+  const fromRate = Number(exchangeRates.rates?.[from]) || 0;
+  const toRate = Number(exchangeRates.rates?.[to]) || 0;
+  if (!fromRate || !toRate) {
+    return null;
+  }
+
+  return Number(((numericAmount * fromRate) / toRate).toFixed(2));
+}
+
+function getExpenseAmountInCurrency(expense, currency = appSettings.default_currency) {
+  const convertedAmount = convertMoney(expense.amount, expense.currency, currency);
+  return convertedAmount === null ? Number(expense.amount) || 0 : convertedAmount;
+}
+
+function getIncomeAmountInCurrency(income, currency = appSettings.default_currency) {
+  const convertedAmount = convertMoney(income.amount, income.currency, currency);
+  return convertedAmount === null ? Number(income.amount) || 0 : convertedAmount;
+}
+
+function formatMoney(amount, currency = appSettings.default_currency) {
+  return `${Number(amount || 0).toFixed(2)} ${normalizeCurrency(currency, appSettings.default_currency)}`;
+}
+
+function formatMoneyWithEquivalent(amount, currency = appSettings.default_currency) {
+  const safeCurrency = normalizeCurrency(currency, appSettings.default_currency);
+  const displayCurrency = appSettings.display_currency;
+  const baseText = formatMoney(amount, safeCurrency);
+  if (safeCurrency === displayCurrency) {
+    return baseText;
+  }
+
+  const convertedAmount = convertMoney(amount, safeCurrency, displayCurrency);
+  return convertedAmount === null ? baseText : `${baseText} (≈ ${formatMoney(convertedAmount, displayCurrency)})`;
+}
+
+function renderCurrencyBadge(currency) {
+  const safeCurrency = normalizeCurrency(currency, appSettings.default_currency);
+  if (safeCurrency === appSettings.default_currency) {
+    return "";
+  }
+
+  return `<span class="currency-badge">${escapeHtml(safeCurrency)}</span>`;
+}
+
 function render() {
   filteredExpenses = sortExpenses(applyFilters(expenses));
+  renderTodayView();
   renderLatestExpenses();
   renderSummary();
   renderIncomeView();
   renderCryptoView();
   renderRecurringView();
+  renderSettingsView();
   renderTable();
   renderCharts();
   renderSortState();
+}
+
+function renderTodayView() {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayExpenses = expenses.filter((expense) => expense.date === today);
+  const todayTotal = todayExpenses.reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
+  const monthlySummary = buildMonthlySummary(expenses, visibleMonthDate);
+  const dailyLimit = Number(appSettings.daily_limit) || 0;
+  const dailyRatio = dailyLimit ? Math.min(todayTotal / dailyLimit, 1) : 0;
+
+  if (todayTotalAmount) {
+    todayTotalAmount.textContent = formatMoneyWithEquivalent(todayTotal, appSettings.default_currency);
+  }
+  if (todayExpenseCount) {
+    todayExpenseCount.textContent = String(todayExpenses.length);
+  }
+  if (todayMonthTotal) {
+    todayMonthTotal.textContent = monthlySummary.total.toFixed(2);
+  }
+  if (todayLimitMeter) {
+    todayLimitMeter.style.width = `${Math.round(dailyRatio * 100)}%`;
+    todayLimitMeter.dataset.state = dailyRatio >= 1 ? "danger" : dailyRatio >= 0.75 ? "warning" : "ok";
+  }
+  if (todayLimitStatus) {
+    if (!dailyLimit) {
+      todayLimitStatus.textContent = "Дневной лимит не задан";
+    } else {
+      const left = dailyLimit - todayTotal;
+      todayLimitStatus.textContent =
+        left >= 0
+          ? `Осталось ${formatMoney(left)} из ${formatMoney(dailyLimit)}`
+          : `Лимит превышен на ${formatMoney(Math.abs(left))}`;
+    }
+  }
 }
 
 function renderLatestExpenses() {
@@ -2014,39 +2462,75 @@ function renderLatestExpenses() {
     return;
   }
 
-  const latestExpenses = [...expenses].sort(sortByDateDesc).slice(0, 4);
-  latestExpenseCount.textContent = String(expenses.length);
+  const latestItems = buildLatestActivityItems().slice(0, 4);
+  latestExpenseCount.textContent = String(expenses.length + incomes.length + cryptoAssets.length + recurringExpenses.length);
   if (latestExpenseCountLabel) {
-    latestExpenseCountLabel.textContent = formatRecordCountLabel(expenses.length);
+    latestExpenseCountLabel.textContent = "событий";
   }
   if (latestExpenseHint) {
-    latestExpenseHint.textContent = getLatestExpenseHint(latestExpenses.length);
+    latestExpenseHint.textContent = latestItems.length ? `Последние ${latestItems.length} справа` : "Добавьте первую операцию";
   }
 
-  if (!latestExpenses.length) {
-    latestExpenseList.innerHTML = '<p class="latest-empty">Пока нет записей. Первая трата появится здесь.</p>';
+  if (!latestItems.length) {
+    latestExpenseList.innerHTML = '<p class="latest-empty">Пока нет операций. Первая запись появится здесь.</p>';
     return;
   }
 
-  latestExpenseList.innerHTML = latestExpenses
-    .map((expense, index) => {
-      const title = getExpenseShortTitle(expense);
-      const meta = [formatShortIsoDate(expense.date), formatCategoryLabel(expense.category)]
-        .filter(Boolean)
-        .join(" · ");
-
+  latestExpenseList.innerHTML = latestItems
+    .map((item, index) => {
       return `
         <article class="latest-expense-card">
           <span class="latest-expense-index">${String(index + 1).padStart(2, "0")}</span>
           <div>
-            <strong>${escapeHtml(shortenText(title, 28))}</strong>
-            <small>${escapeHtml(meta || "Без категории")}</small>
+            <strong>${escapeHtml(shortenText(item.title, 28))}</strong>
+            <small>${escapeHtml(item.meta)}</small>
           </div>
-          <b>${escapeHtml(expense.amount.toFixed(2))} ${escapeHtml(expense.currency)}</b>
+          <b>${escapeHtml(item.amountText)}</b>
         </article>
       `;
     })
     .join("");
+}
+
+function buildLatestActivityItems() {
+  return [
+    ...expenses.map((expense) => ({
+      date: expense.date,
+      id: expense.id,
+      title: getExpenseShortTitle(expense),
+      meta: ["Расход", formatShortIsoDate(expense.date), formatCategoryLabel(expense.category)].filter(Boolean).join(" · "),
+      amountText: `− ${formatMoneyWithEquivalent(expense.amount, expense.currency)}`,
+    })),
+    ...incomes.map((income) => ({
+      date: income.date,
+      id: income.id,
+      title: toDisplayCase(income.source || "Доход"),
+      meta: ["Доход", formatShortIsoDate(income.date)].filter(Boolean).join(" · "),
+      amountText: `+ ${formatMoneyWithEquivalent(income.amount, income.currency)}`,
+    })),
+    ...cryptoAssets.map((asset) => ({
+      date: asset.updated_at || "",
+      id: asset.id,
+      title: `${asset.symbol} · ${asset.name}`,
+      meta: "Актив · крипта",
+      amountText: formatMoneyWithEquivalent(asset.invested_amount, asset.currency),
+    })),
+    ...recurringExpenses.map((item) => ({
+      date: item.start_date,
+      id: item.id,
+      title: toDisplayCase(item.description_raw || "Подписка"),
+      meta: `Подписка · ${item.frequency === "weekly" ? "неделя" : "месяц"}`,
+      amountText: formatMoneyWithEquivalent(item.amount, item.currency),
+    })),
+  ].sort((left, right) => {
+    const leftTime = new Date(left.date || 0).getTime();
+    const rightTime = new Date(right.date || 0).getTime();
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+
+    return (Number(right.id) || 0) - (Number(left.id) || 0);
+  });
 }
 
 function renderSummary() {
@@ -2062,7 +2546,7 @@ function renderSummary() {
 
   clearStatSkeleton(totalAmountNode, expenseCountNode, latestExpenseCount);
   const monthlySummary = buildMonthlySummary(expenses, visibleMonthDate);
-  totalAmountNode.textContent = `${monthlySummary.total.toFixed(2)} UAH`;
+  totalAmountNode.textContent = formatMoneyWithEquivalent(monthlySummary.total, appSettings.default_currency);
   expenseCountNode.textContent = `${monthlySummary.count} записей за месяц`;
   monthLabel.textContent = formatMonthLabel(visibleMonthDate);
   monthlyWeekBreakdown.innerHTML = renderMonthlyWeeks(monthlySummary.weeks);
@@ -2088,13 +2572,13 @@ function renderIncomeView() {
   const balance = monthlyIncomeSummary.total - monthlyExpenseSummary.total;
 
   if (monthlyIncomeAmount) {
-    monthlyIncomeAmount.textContent = `${monthlyIncomeSummary.total.toFixed(2)} UAH`;
+  monthlyIncomeAmount.textContent = formatMoneyWithEquivalent(monthlyIncomeSummary.total, appSettings.default_currency);
   }
   if (monthlyExpenseMirror) {
-    monthlyExpenseMirror.textContent = `${monthlyExpenseSummary.total.toFixed(2)} UAH`;
+    monthlyExpenseMirror.textContent = formatMoneyWithEquivalent(monthlyExpenseSummary.total, appSettings.default_currency);
   }
   if (monthlyBalanceAmount) {
-    monthlyBalanceAmount.textContent = `${balance.toFixed(2)} UAH`;
+    monthlyBalanceAmount.textContent = formatMoneyWithEquivalent(balance, appSettings.default_currency);
     monthlyBalanceAmount.classList.toggle("negative-balance", balance < 0);
   }
   if (incomeCount) {
@@ -2160,7 +2644,7 @@ function renderIncomeTable() {
     row.innerHTML = `
       <td>${escapeHtml(String(income.id))}</td>
       <td>${escapeHtml(income.date)}</td>
-      <td>${escapeHtml(income.amount.toFixed(2))} ${escapeHtml(income.currency)}</td>
+      <td>${escapeHtml(formatMoneyWithEquivalent(income.amount, income.currency))}${renderCurrencyBadge(income.currency)}</td>
       <td>${escapeHtml(toDisplayCase(income.source))}</td>
       <td>${escapeHtml(income.notes ? toDisplayCase(income.notes) : "—")}</td>
       <td class="table-actions-cell">
@@ -2229,7 +2713,7 @@ function renderCryptoTable(portfolioRows) {
       <td>${escapeHtml(formatCryptoAmount(rowData.asset.amount_held))}</td>
       <td>${escapeHtml(rowData.price ? `${rowData.price.toFixed(2)} UAH` : "нет цены")}</td>
       <td>${rowData.hasPrice ? `${escapeHtml(rowData.currentValue.toFixed(2))} UAH` : "—"}</td>
-      <td>${escapeHtml(rowData.asset.invested_amount.toFixed(2))} UAH</td>
+      <td>${escapeHtml(formatMoneyWithEquivalent(rowData.asset.invested_amount, rowData.asset.currency))}${renderCurrencyBadge(rowData.asset.currency)}</td>
       <td class="${rowData.profit < 0 ? "negative-cell" : "positive-cell"}">${rowData.hasPrice ? `${escapeHtml(formatSignedAmount(rowData.profit))} UAH` : "—"}</td>
       <td>${escapeHtml(rowData.asset.notes ? toDisplayCase(rowData.asset.notes) : "—")}</td>
       <td class="table-actions-cell">
@@ -2259,10 +2743,10 @@ function renderRecurringView() {
   const activeRecurringExpenses = recurringExpenses.filter((item) => item.active);
   const monthlyAmount = activeRecurringExpenses.reduce((sum, item) => {
     const multiplier = item.frequency === "weekly" ? 4.345 : 1;
-    return sum + item.amount * multiplier;
+    return sum + getExpenseAmountInCurrency(item) * multiplier;
   }, 0);
 
-  recurringMonthlyAmount.textContent = `${monthlyAmount.toFixed(2)} UAH`;
+  recurringMonthlyAmount.textContent = formatMoneyWithEquivalent(monthlyAmount, appSettings.default_currency);
   recurringCount.textContent = `${activeRecurringExpenses.length} ${formatSubscriptionCountLabel(activeRecurringExpenses.length)}`;
   recurringTableBody.innerHTML = "";
 
@@ -2284,7 +2768,7 @@ function renderRecurringView() {
     row.innerHTML = `
       <td>${escapeHtml(String(recurringExpense.id))}</td>
       <td>${escapeHtml(recurringExpense.start_date)}</td>
-      <td>${escapeHtml(recurringExpense.amount.toFixed(2))} ${escapeHtml(recurringExpense.currency)}</td>
+      <td>${escapeHtml(formatMoneyWithEquivalent(recurringExpense.amount, recurringExpense.currency))}${renderCurrencyBadge(recurringExpense.currency)}</td>
       <td>${escapeHtml(toDisplayCase(recurringExpense.description_raw))}</td>
       <td>${escapeHtml(recurringExpense.frequency === "weekly" ? "Неделя" : "Месяц")}</td>
       <td>${escapeHtml(formatCategoryLabel(recurringExpense.category))}</td>
@@ -2298,6 +2782,83 @@ function renderRecurringView() {
     `;
     recurringTableBody.appendChild(row);
   }
+}
+
+function renderSettingsView() {
+  if (!settingsView) {
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayTotal = expenses.filter((expense) => expense.date === today).reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
+  const monthlySummary = buildMonthlySummary(expenses, visibleMonthDate);
+  const monthlyLimit = Number(appSettings.monthly_limit) || 0;
+  const monthlyRatio = monthlyLimit ? monthlySummary.total / monthlyLimit : 0;
+
+  if (dailyLimitInput && document.activeElement !== dailyLimitInput) {
+    dailyLimitInput.value = appSettings.daily_limit ? String(appSettings.daily_limit) : "";
+  }
+  if (monthlyLimitInput && document.activeElement !== monthlyLimitInput) {
+    monthlyLimitInput.value = appSettings.monthly_limit ? String(appSettings.monthly_limit) : "";
+  }
+  if (defaultCurrencyInput && document.activeElement !== defaultCurrencyInput) {
+    defaultCurrencyInput.value = appSettings.default_currency;
+    updateCustomSelect(defaultCurrencyInput);
+  }
+  if (displayCurrencyInput && document.activeElement !== displayCurrencyInput) {
+    displayCurrencyInput.value = appSettings.display_currency;
+    updateCustomSelect(displayCurrencyInput);
+  }
+  if (categoryCatalogInput && document.activeElement !== categoryCatalogInput) {
+    categoryCatalogInput.value = appSettings.category_catalog.join(", ");
+  }
+  if (exchangeRateStatusMessage) {
+    exchangeRateStatusMessage.textContent = getExchangeRateStatusText();
+  }
+  if (settingsTodayTotal) {
+    settingsTodayTotal.textContent = formatMoneyWithEquivalent(todayTotal, appSettings.default_currency);
+  }
+  if (settingsMonthTotal) {
+    settingsMonthTotal.textContent = formatMoneyWithEquivalent(monthlySummary.total, appSettings.default_currency);
+  }
+  if (monthlyLimitProgress) {
+    monthlyLimitProgress.textContent = monthlyLimit ? `${Math.round(monthlyRatio * 100)}%` : "0%";
+    monthlyLimitProgress.classList.toggle("negative-balance", monthlyRatio > 1);
+  }
+  if (monthlyLimitStatus) {
+    monthlyLimitStatus.textContent = monthlyLimit
+      ? `${formatMoney(monthlySummary.total)} из ${formatMoney(monthlyLimit)} за месяц`
+      : "Месячный лимит не задан";
+  }
+  if (categoryCatalogList) {
+    const categories = appSettings.category_catalog.length
+      ? appSettings.category_catalog
+      : [...new Set(expenses.map((expense) => expense.category).filter((value) => value && value !== "other"))].sort();
+    categoryCatalogList.innerHTML = categories.length
+      ? categories.map((category) => `<span>${escapeHtml(formatCategoryLabel(category))}</span>`).join("")
+      : '<p class="latest-empty">Категории появятся после первых расходов или ручного заполнения справочника.</p>';
+  }
+}
+
+function getExchangeRateStatusText() {
+  const updatedAt = String(exchangeRates.updated_at || "");
+  if (!updatedAt) {
+    return "Курс ещё не загружен";
+  }
+
+  const date = new Date(updatedAt);
+  const formattedDate = Number.isNaN(date.getTime())
+    ? updatedAt
+    : date.toLocaleString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+  const rate = convertMoney(1, appSettings.display_currency, appSettings.default_currency);
+  const rateText = rate === null ? "" : ` · 1 ${appSettings.display_currency} ≈ ${formatMoney(rate, appSettings.default_currency)}`;
+  return `Курс обновлён ${formattedDate}${rateText}`;
 }
 
 function buildCryptoPortfolioRow(asset) {
@@ -2344,7 +2905,7 @@ function renderTable() {
     row.innerHTML = `
       <td>${escapeHtml(String(expense.id))}</td>
       <td>${escapeHtml(expense.date)}</td>
-      <td>${escapeHtml(expense.amount.toFixed(2))} ${escapeHtml(expense.currency)}</td>
+      <td>${escapeHtml(formatMoneyWithEquivalent(expense.amount, expense.currency))}${renderCurrencyBadge(expense.currency)}</td>
       <td>${escapeHtml(String(expense.quantity))}</td>
       <td>${escapeHtml(toDisplayCase(expense.description_raw))}</td>
       <td>${escapeHtml(shortenText(toDisplayCase(expense.product_name), 20))}</td>
@@ -2415,7 +2976,7 @@ function aggregateBy(field) {
 
   for (const expense of filteredExpenses) {
     const key = expense[field] || "other";
-    totals.set(key, (totals.get(key) || 0) + expense.amount);
+    totals.set(key, (totals.get(key) || 0) + getExpenseAmountInCurrency(expense));
   }
 
   const labels = [...totals.keys()];
@@ -2429,7 +2990,7 @@ function aggregateByDate() {
 
   for (const expense of filteredExpenses) {
     const key = expense.date || "Без даты";
-    totals.set(key, (totals.get(key) || 0) + expense.amount);
+    totals.set(key, (totals.get(key) || 0) + getExpenseAmountInCurrency(expense));
   }
 
   const labels = [...totals.keys()].sort();
@@ -2449,7 +3010,7 @@ function aggregateByVisibleWeek() {
     const currentDay = addDays(start, index);
     const isoDate = formatIsoDate(currentDay);
     const dayExpenses = filteredExpenses.filter((expense) => expense.date === isoDate);
-    const dayTotal = dayExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const dayTotal = dayExpenses.reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
 
     labels.push(formatWeekdayLabel(currentDay));
     values.push(Number(dayTotal.toFixed(2)));
@@ -2479,7 +3040,7 @@ function buildMonthlySummary(sourceExpenses, monthDate) {
     const isoDate = formatIsoDate(dayCursor);
     const total = monthlyExpenses
       .filter((expense) => expense.date === isoDate)
-      .reduce((sum, expense) => sum + expense.amount, 0);
+      .reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
 
     dailyTotals.push(Number(total.toFixed(2)));
     dayCursor = addDays(dayCursor, 1);
@@ -2493,7 +3054,7 @@ function buildMonthlySummary(sourceExpenses, monthDate) {
         const expenseDate = new Date(expense.date || 0);
         return expenseDate >= weekStart && expenseDate <= weekEnd;
       })
-      .reduce((sum, expense) => sum + expense.amount, 0);
+      .reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
 
     weeks.push({
       start: weekStart,
@@ -2505,7 +3066,7 @@ function buildMonthlySummary(sourceExpenses, monthDate) {
   }
 
   return {
-    total: Number(monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0).toFixed(2)),
+    total: Number(monthlyExpenses.reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0).toFixed(2)),
     count: monthlyExpenses.length,
     weeks,
     dailyTotals,
@@ -2521,7 +3082,7 @@ function buildMonthlyIncomeSummary(sourceIncomes, monthDate) {
   });
 
   return {
-    total: Number(monthlyIncomes.reduce((sum, income) => sum + income.amount, 0).toFixed(2)),
+    total: Number(monthlyIncomes.reduce((sum, income) => sum + getIncomeAmountInCurrency(income), 0).toFixed(2)),
     count: monthlyIncomes.length,
   };
 }
@@ -2536,7 +3097,7 @@ function renderMonthlyWeeks(weeks) {
       (week) => `
         <div class="monthly-week-row">
           <span>${escapeHtml(formatWeekInterval(week.start, week.end))}</span>
-          <strong>${escapeHtml(week.total.toFixed(2))} UAH</strong>
+          <strong>${escapeHtml(formatMoneyWithEquivalent(week.total, appSettings.default_currency))}</strong>
         </div>
       `,
     )
@@ -3212,6 +3773,27 @@ function setRecurringStatus(message, isError = false) {
   maybeShowStatusToast(message, isError);
 }
 
+function setQuickExpenseStatus(message, isError = false) {
+  if (!quickExpenseStatusMessage) {
+    setStatus(message, isError);
+    return;
+  }
+
+  quickExpenseStatusMessage.textContent = getInlineStatusMessage(message, isError);
+  quickExpenseStatusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
+}
+
+function setSettingsStatus(message, isError = false) {
+  if (!settingsStatusMessage) {
+    return;
+  }
+
+  settingsStatusMessage.textContent = getInlineStatusMessage(message, isError);
+  settingsStatusMessage.classList.toggle("error", isError);
+  maybeShowStatusToast(message, isError);
+}
+
 function getInlineStatusMessage(message, isError) {
   if (!message || isError || isToastSuccessMessage(message)) {
     return "";
@@ -3329,6 +3911,9 @@ async function handleConfirmSave() {
     celebrateExpenseSave();
     if (pendingMode === "create") {
       form.reset();
+      if (quickExpenseInput) {
+        quickExpenseInput.value = "";
+      }
       dateInput.value = new Date().toISOString().slice(0, 10);
       quantityInput.value = "1";
     }
@@ -3541,23 +4126,6 @@ function readConfirmEditorValue() {
   });
 }
 
-function sanitizeDecision(decision) {
-  const details = Array.isArray(decision?.details)
-    ? decision.details.map((item) => ({
-        field: String(item?.field || ""),
-        label: String(item?.label || ""),
-        value: String(item?.value || ""),
-        action: String(item?.action || "fallback"),
-        message: String(item?.message || ""),
-      }))
-    : [];
-
-  return {
-    summary: String(decision?.summary || "ИИ определил категорию и получателя для этой траты."),
-    details,
-  };
-}
-
 function formatAggregateLabel(value) {
   if (FOR_WHOM_LABELS[value]) {
     return FOR_WHOM_LABELS[value];
@@ -3572,47 +4140,4 @@ function formatFilterLabel(selectNode, value) {
   }
 
   return formatCategoryLabel(value);
-}
-
-function formatForWhomLabel(value) {
-  return FOR_WHOM_LABELS[value] || "Другое";
-}
-
-function formatCategoryLabel(value) {
-  if (!value || value === "other") {
-    return "Другое";
-  }
-
-  return toDisplayCase(value);
-}
-
-function toDisplayCase(value) {
-  const normalized = String(value || "").trim();
-
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function normalizeQuantityValue(value) {
-  return Math.max(1, Math.trunc(Number(value) || 1));
-}
-
-function shortenText(value, maxLength) {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength - 1)}…`;
-}
-
-function escapeHtml(value) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

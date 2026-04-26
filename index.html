@@ -21,17 +21,18 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icons/spendsoul-icon.svg" />
     <link rel="apple-touch-icon" href="./icons/spendsoul-icon.svg" />
-    <link rel="stylesheet" href="./style.css?v=20260426-20" />
+    <link rel="stylesheet" href="./style.css?v=20260426-26" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="./config.js?v=20260426-2"></script>
     <script src="./config.local.js?v=20260426-2"></script>
-    <script type="module" src="./app.js?v=20260426-19" defer></script>
+    <script type="module" src="./app.js?v=20260426-26" defer></script>
   </head>
   <body>
     <div class="page-shell">
       <header class="topbar">
         <div class="brand-block">
+          <img class="brand-mark" src="./icons/spendsoul-icon.svg" alt="SpendSoul" />
           <div class="brand-copy">
             <p class="eyebrow">Обсерватория личных расходов</p>
             <h1 class="brand-title" aria-label="SpendSoul">
@@ -46,27 +47,68 @@
           <button type="button" id="themeToggleButton" class="theme-toggle-button" aria-label="Переключить тему">Светлая тема</button>
 
           <nav class="view-tabs" aria-label="Разделы учета">
-            <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
+            <button type="button" class="view-tab active" data-view-target="today">Сегодня</button>
+            <button type="button" class="view-tab" data-view-target="expenses">Аналитика</button>
             <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
-            <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
-            <button type="button" class="view-tab" data-view-target="recurring">Подписки</button>
+            <button type="button" class="view-tab" data-view-target="crypto">Активы</button>
+            <button type="button" class="view-tab" data-view-target="settings">Ещё</button>
           </nav>
         </div>
       </header>
 
-      <div id="expensesView" class="app-view">
+      <div id="todayView" class="app-view">
+      <section class="today-panel" aria-label="Сегодня">
+        <div class="today-summary">
+          <p class="hero-kicker">Сегодня</p>
+          <h2 id="todayTotalAmount">0.00 UAH</h2>
+          <p id="todayLimitStatus">Дневной лимит не задан</p>
+          <div class="limit-meter" aria-hidden="true">
+            <span id="todayLimitMeter"></span>
+          </div>
+          <div class="today-mini-stats">
+            <span><strong id="todayExpenseCount">0</strong> записей</span>
+            <span><strong id="todayMonthTotal">0.00</strong> UAH за месяц</span>
+          </div>
+        </div>
+
+        <form id="quickExpenseForm" class="quick-expense-form">
+          <label>
+            <span>Тип</span>
+            <select id="quickEntryType">
+              <option value="expense">Расход</option>
+              <option value="income">Доход</option>
+              <option value="recurring">Подписка</option>
+              <option value="crypto">Крипта</option>
+            </select>
+          </label>
+          <label>
+            <span>Быстрый ввод</span>
+            <input
+              type="text"
+              id="quickExpenseInput"
+              placeholder="кофе 80, такси домой 240, чатгпт 800 подписка"
+              autocomplete="off"
+            />
+          </label>
+          <button type="submit" id="quickExpenseSubmitButton">Добавить</button>
+          <p id="quickExpenseStatusMessage" class="status-message" aria-live="polite"></p>
+        </form>
+      </section>
+
       <section class="latest-strip" aria-label="Последние траты">
         <div class="latest-strip-head">
-          <p class="latest-label">Всего в архиве</p>
+          <p class="latest-label">Последние операции</p>
           <div class="latest-count-line">
             <strong id="latestExpenseCount">0</strong>
-            <span id="latestExpenseCountLabel">записей</span>
+            <span id="latestExpenseCountLabel">событий</span>
           </div>
-          <small id="latestExpenseHint">Последние 4 справа</small>
+          <small id="latestExpenseHint">Доходы, расходы, активы</small>
         </div>
         <div id="latestExpenseList" class="latest-expense-list"></div>
       </section>
+      </div>
 
+      <div id="expensesView" class="app-view hidden">
       <section class="hero-grid">
         <div class="hero-copy-card hero-copy-card-wide">
           <p class="hero-kicker">Журнал наблюдений</p>
@@ -605,6 +647,89 @@
               <tbody id="recurringTableBody"></tbody>
             </table>
           </div>
+        </section>
+      </div>
+
+      <div id="settingsView" class="app-view hidden">
+        <section class="settings-grid">
+          <div class="hero-copy-card settings-card">
+            <p class="hero-kicker">Настройки</p>
+            <div class="hero-form-head">
+              <div>
+                <h2>Удобство и лимиты</h2>
+                <p class="hero-copy">Дневные и месячные границы помогают видеть темп расходов без лишнего шума.</p>
+              </div>
+              <div class="panel-chip">Личный профиль</div>
+            </div>
+
+            <form id="settingsForm" class="expense-form hero-expense-form">
+              <label>
+                <span>Дневной лимит</span>
+                <input type="number" id="dailyLimitInput" min="0" step="1" inputmode="decimal" placeholder="Например: 700" />
+              </label>
+              <label>
+                <span>Месячный лимит</span>
+                <input type="number" id="monthlyLimitInput" min="0" step="1" inputmode="decimal" placeholder="Например: 20000" />
+              </label>
+              <label>
+                <span>Валюта по умолчанию</span>
+                <select id="defaultCurrencyInput">
+                  <option value="UAH">UAH · гривна</option>
+                  <option value="USD">USD · доллар</option>
+                  <option value="EUR">EUR · евро</option>
+                  <option value="PLN">PLN · злотый</option>
+                  <option value="RUB">RUB · рубль</option>
+                </select>
+              </label>
+              <label>
+                <span>Показывать эквивалент</span>
+                <select id="displayCurrencyInput">
+                  <option value="USD">USD · доллар</option>
+                  <option value="UAH">UAH · гривна</option>
+                  <option value="EUR">EUR · евро</option>
+                  <option value="PLN">PLN · злотый</option>
+                  <option value="RUB">RUB · рубль</option>
+                </select>
+              </label>
+              <label class="full-width">
+                <span>Категории справочника</span>
+                <textarea id="categoryCatalogInput" rows="5" placeholder="еда, транспорт, дом, подписки, здоровье"></textarea>
+              </label>
+              <div class="form-actions full-width">
+                <button type="submit" id="settingsSubmitButton">Сохранить настройки</button>
+                <button type="button" id="refreshExchangeRatesButton" class="ghost-button icon-only-button refresh-rates-button" aria-label="Обновить курсы"></button>
+              </div>
+              <p id="exchangeRateStatusMessage" class="exchange-rate-status">Курс ещё не загружен</p>
+              <p id="settingsStatusMessage" class="status-message" aria-live="polite"></p>
+            </form>
+          </div>
+
+          <div class="hero-stat-card settings-stat-card">
+            <span class="stat-label">Лимиты</span>
+            <strong id="monthlyLimitProgress">0%</strong>
+            <small id="monthlyLimitStatus">Месячный лимит не задан</small>
+            <div class="income-balance-list">
+              <div>
+                <span>Сегодня</span>
+                <strong id="settingsTodayTotal">0.00 UAH</strong>
+              </div>
+              <div>
+                <span>Месяц</span>
+                <strong id="settingsMonthTotal">0.00 UAH</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel table-panel category-catalog-panel">
+          <div class="panel-header-row">
+            <div class="panel-heading">
+              <p class="panel-label">Справочник</p>
+              <h2>Категории</h2>
+              <p>SpendSoul использует этот список как ориентир для быстрого ввода и подсказок ИИ.</p>
+            </div>
+          </div>
+          <div id="categoryCatalogList" class="category-catalog-list"></div>
         </section>
       </div>
 

@@ -9,6 +9,7 @@ const ALLOWED_FOR_WHOM = new Set([
   "household",
   "other",
 ]);
+const SUPPORTED_CURRENCIES = new Set(["UAH", "USD", "EUR", "PLN", "RUB"]);
 
 const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -71,10 +72,21 @@ export default {
         return jsonResponse(recurringExpenses);
       }
 
+      if (request.method === "GET" && url.pathname === "/api/settings") {
+        const settings = await loadSettings(env, authContext);
+        return jsonResponse(settings);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/crypto-prices") {
         const ids = parseCryptoPriceIds(url);
         const prices = await fetchCryptoPrices(ids, env);
         return jsonResponse(prices);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/exchange-rates") {
+        const symbols = parseExchangeRateSymbols(url);
+        const rates = await fetchExchangeRates(symbols);
+        return jsonResponse(rates);
       }
 
       if (request.method === "POST" && url.pathname === "/api/normalize-expense") {
@@ -83,7 +95,8 @@ export default {
 
         const nextId = await getNextExpenseId(env, authContext);
         const existingExpenses = await loadExpenses(env, authContext);
-        const normalizedExpense = await normalizeExpenseWithOpenAI(body, nextId, env, existingExpenses);
+        const settings = await loadSettings(env, authContext);
+        const normalizedExpense = await normalizeExpenseWithOpenAI(body, nextId, env, existingExpenses, settings);
         const sanitizedExpense = sanitizeExpense(normalizedExpense, nextId, body);
         const decision = buildNormalizationDecision(sanitizedExpense, existingExpenses);
 
@@ -146,6 +159,13 @@ export default {
 
         await saveRecurringExpense(env, authContext, sanitizedRecurringExpense);
         return jsonResponse(sanitizedRecurringExpense, 201);
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/settings") {
+        const body = await request.json();
+        const settings = sanitizeSettings(body);
+        await saveSettings(env, authContext, settings);
+        return jsonResponse(settings);
       }
 
       if (request.method === "POST" && url.pathname === "/api/materialize-recurring-expenses") {
@@ -411,7 +431,21 @@ async function handleTelegramWebhook(update, env) {
     return;
   }
 
+  if (message?.voice && from?.id) {
+    try {
+      await handleTelegramExpenseMessage(env, chatId, from, await transcribeTelegramVoice(env, message.voice.file_id));
+    } catch (error) {
+      await sendTelegramMessage(env, chatId, error instanceof Error ? error.message : "Не удалось обработать голосовое.");
+    }
+    return;
+  }
+
   if (!nonce) {
+    if (text && from?.id && !text.startsWith("/")) {
+      await handleTelegramExpenseMessage(env, chatId, from, text);
+      return;
+    }
+
     await sendTelegramAppLaunchMessage(env, chatId);
     return;
   }
@@ -450,6 +484,107 @@ async function handleTelegramWebhook(update, env) {
     "Готово, вход подтвержден. Откройте SpendSoul кнопкой ниже.",
     buildTelegramAppReplyMarkup(env),
   );
+}
+
+async function handleTelegramExpenseMessage(env, chatId, from, text) {
+  const payload = parseQuickExpenseText(text);
+  if (!payload) {
+    await sendTelegramMessage(env, chatId, "Напишите расход в формате: кофе 80 или отправьте голосовое с суммой.");
+    return;
+  }
+
+  const authContext = {
+    userId: String(from.id),
+    user: {
+      id: Number(from.id),
+      first_name: String(from.first_name || ""),
+      last_name: String(from.last_name || ""),
+      username: String(from.username || ""),
+    },
+  };
+  const nextId = await getNextExpenseId(env, authContext);
+  const existingExpenses = await loadExpenses(env, authContext);
+  const settings = await loadSettings(env, authContext);
+  const normalizedExpense = await normalizeExpenseWithOpenAI(payload, nextId, env, existingExpenses, settings);
+  const sanitizedExpense = sanitizeExpense(normalizedExpense, nextId, payload);
+  await saveExpense(env, authContext, sanitizedExpense);
+
+  await sendTelegramMessage(
+    env,
+    chatId,
+    `Записал: ${sanitizedExpense.product_name || sanitizedExpense.description_raw} — ${sanitizedExpense.amount.toFixed(2)} ${sanitizedExpense.currency}.`,
+    buildTelegramAppReplyMarkup(env),
+  );
+}
+
+function parseQuickExpenseText(value) {
+  const rawValue = String(value || "").trim();
+  const amountMatch = rawValue.match(/(?:^|\s)(\d+(?:[.,]\d{1,2})?)(?:\s*(?:uah|usd|eur|pln|rub|грн|₴|\$|€|zł|₽|руб))?(?=\s|$)/i);
+  if (!amountMatch) {
+    return null;
+  }
+
+  const amount = Number(amountMatch[1].replace(",", "."));
+  const description = rawValue
+    .replace(amountMatch[0], " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!description || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    amount,
+    currency: inferCurrency(rawValue, "UAH"),
+    quantity: 1,
+    description_raw: description,
+    notes: "Добавлено через Telegram",
+    ai_hint: "Запись пришла сообщением или голосом в Telegram.",
+  };
+}
+
+async function transcribeTelegramVoice(env, fileId) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new ConfigurationError("TELEGRAM_BOT_TOKEN is not configured.");
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    throw new ConfigurationError("OPENAI_API_KEY is not configured.");
+  }
+
+  const fileResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`);
+  const fileData = await fileResponse.json();
+  const filePath = fileData?.result?.file_path;
+  if (!fileResponse.ok || !filePath) {
+    throw new Error("Не удалось получить голосовое из Telegram.");
+  }
+
+  const voiceResponse = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`);
+  if (!voiceResponse.ok) {
+    throw new Error("Не удалось скачать голосовое из Telegram.");
+  }
+
+  const formData = new FormData();
+  formData.append("model", env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe");
+  formData.append("language", "ru");
+  formData.append("file", new Blob([await voiceResponse.arrayBuffer()], { type: "audio/ogg" }), "telegram-voice.ogg");
+
+  const transcriptionResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+    },
+    body: formData,
+  });
+
+  const transcriptionData = await transcriptionResponse.json();
+  if (!transcriptionResponse.ok || !transcriptionData?.text) {
+    throw new Error("Не удалось распознать голосовое.");
+  }
+
+  return String(transcriptionData.text);
 }
 
 async function sendTelegramAppLaunchMessage(env, chatId) {
@@ -656,6 +791,23 @@ async function loadRecurringExpenses(env, authContext) {
   return recurringExpenses.map((recurringExpense) => sanitizeRecurringExpense(recurringExpense, Number(recurringExpense?.id) || getNextRecordId(0)));
 }
 
+async function loadSettings(env, authContext) {
+  if (!env.EXPENSES_KV) {
+    return sanitizeSettings({});
+  }
+
+  const raw = await env.EXPENSES_KV.get(getUserKeyPrefix(authContext, "settings"));
+  if (!raw) {
+    return sanitizeSettings({});
+  }
+
+  try {
+    return sanitizeSettings(JSON.parse(raw));
+  } catch {
+    return sanitizeSettings({});
+  }
+}
+
 async function loadJsonRecords(env, authContext, legacyKey, recordPrefix) {
   if (!env.EXPENSES_KV) {
     return [];
@@ -727,6 +879,14 @@ async function saveCryptoAsset(env, authContext, cryptoAsset) {
 
 async function saveRecurringExpense(env, authContext, recurringExpense) {
   await putJsonRecord(env, authContext, "recurring_expenses:", recurringExpense);
+}
+
+async function saveSettings(env, authContext, settings) {
+  if (!env.EXPENSES_KV) {
+    return;
+  }
+
+  await env.EXPENSES_KV.put(getUserKeyPrefix(authContext, "settings"), JSON.stringify(sanitizeSettings(settings)));
 }
 
 async function deleteExpense(env, authContext, id) {
@@ -834,13 +994,13 @@ function getNextRecordId(maxId) {
   return Math.max(maxId + 1, timeId);
 }
 
-async function normalizeExpenseWithOpenAI(payload, nextId, env, existingExpenses = []) {
+async function normalizeExpenseWithOpenAI(payload, nextId, env, existingExpenses = [], settings = {}) {
   if (!env.OPENAI_API_KEY) {
     return fallbackNormalize(payload, nextId);
   }
 
   const systemPrompt = buildSystemPrompt();
-  const prompt = buildNormalizationPrompt(payload, nextId, existingExpenses);
+  const prompt = buildNormalizationPrompt(payload, nextId, existingExpenses, settings);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -916,6 +1076,13 @@ function buildSystemPrompt() {
     "Use exactly these fields: id, date, amount, quantity, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes, ai_hint.",
     "Do not add, remove, or rename fields.",
     "Keep amount as number, quantity as integer, and all other non-numeric values as strings.",
+    "Supported currencies are UAH, USD, EUR, and PLN.",
+    "Use the user's default currency unless the text explicitly mentions another supported currency.",
+    "If the text includes $, dollar, dollars, usd, бакс, баксы, or доллар, use USD.",
+    "If the text includes €, euro, eur, or евро, use EUR.",
+    "If the text includes zł, pln, злотый, or злотых, use PLN.",
+    "If the text includes rub, ruble, rubles, руб, рубль, рублей, or ₽, use RUB.",
+    "If the text includes грн, гривна, uah, or ₴, use UAH.",
     "Allowed for_whom values only: myself, friend, girlfriend, family, pet, gift, loan, household, other.",
     "Interpret who benefited from the purchase:",
     "myself = for the user personally; friend = for a friend or other person; girlfriend = specifically for girlfriend, wife, or female partner; family = for parents or family members; pet = for a pet or animal; gift = bought as a gift; loan = money lent or debt-related; household = shared home/family expense; other = unclear.",
@@ -939,8 +1106,9 @@ function buildSystemPrompt() {
   ].join(" ");
 }
 
-function buildNormalizationPrompt(payload, nextId, existingExpenses) {
+function buildNormalizationPrompt(payload, nextId, existingExpenses, settings = {}) {
   const catalogs = buildExistingCatalogs(existingExpenses);
+  const categoryCatalog = sanitizeSettings(settings).category_catalog;
 
   return [
     "Normalize the following expense into the exact JSON schema.",
@@ -960,13 +1128,18 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses) {
     "For subscriptions, paid apps, streaming, SaaS, or premium services prefer category=подписки.",
     "If quantity is not explicitly mentioned, set quantity=1.",
     "amount must be the total expense for the whole record, not the per-item price, so total amount = unit price multiplied by quantity.",
+    `If no currency is explicit, use currency=${normalizeCurrency(payload.currency, "UAH")}.`,
     "If ai_hint is present, follow it unless it conflicts with the fixed schema.",
     "When a matching value already exists in the catalog, reuse it.",
+    "Also prefer the user's category reference list when semantically suitable.",
     "If nothing suitable exists in the catalog, create a new concise Russian label.",
     "Avoid returning other for category, sub_category, sub_sub_category, and for_whom when the description contains enough meaning to infer something better.",
     "",
     "Existing category catalog:",
     JSON.stringify(catalogs, null, 2),
+    "",
+    "User category reference list:",
+    JSON.stringify(categoryCatalog, null, 2),
     "",
     JSON.stringify(
       {
@@ -974,7 +1147,7 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses) {
         date: payload.date,
         amount: calculateTotalAmount(payload.amount, payload.quantity || 1),
         quantity: payload.quantity || 1,
-        currency: "UAH",
+        currency: normalizeCurrency(payload.currency, "UAH"),
         description_raw: payload.description_raw,
         notes: payload.notes || "",
         ai_hint: payload.ai_hint || "",
@@ -999,7 +1172,7 @@ function fallbackNormalize(payload, nextId) {
     date: payload.date,
     amount: calculateTotalAmount(payload.amount, quantity),
     quantity,
-    currency: "UAH",
+    currency: inferCurrency(inferenceText, payload.currency),
     description_raw: description,
     product_name: normalizedProduct,
     category: inferredCategories.category,
@@ -1032,7 +1205,7 @@ function sanitizeExpense(expense, nextId, payload) {
     date: String(expense?.date || payload.date || ""),
     amount: safeAmount,
     quantity,
-    currency: String(expense?.currency || "UAH"),
+    currency: normalizeCurrency(expense?.currency || inferCurrency(inferenceText, payload.currency), payload.currency || "UAH"),
     description_raw: description,
     product_name: safeProductName,
     category: safeCategory,
@@ -1049,7 +1222,7 @@ function sanitizeIncome(income, nextId) {
     id: Number(income?.id) || nextId,
     date: String(income?.date || ""),
     amount: Number((Number(income?.amount) || 0).toFixed(2)),
-    currency: String(income?.currency || "UAH"),
+    currency: normalizeCurrency(income?.currency, "UAH"),
     source: String(income?.source || "").trim(),
     notes: String(income?.notes || ""),
   };
@@ -1063,7 +1236,7 @@ function sanitizeCryptoAsset(cryptoAsset, nextId) {
     coingecko_id: String(cryptoAsset?.coingecko_id || "").trim().toLowerCase(),
     amount_held: Number((Number(cryptoAsset?.amount_held) || 0).toFixed(10)),
     invested_amount: Number((Number(cryptoAsset?.invested_amount) || 0).toFixed(2)),
-    currency: String(cryptoAsset?.currency || "UAH"),
+    currency: normalizeCurrency(cryptoAsset?.currency, "UAH"),
     notes: String(cryptoAsset?.notes || ""),
     updated_at: String(cryptoAsset?.updated_at || new Date().toISOString()),
   };
@@ -1076,7 +1249,7 @@ function sanitizeRecurringExpense(recurringExpense, nextId) {
     id: Number(recurringExpense?.id) || nextId,
     start_date: String(recurringExpense?.start_date || ""),
     amount: Number((Number(recurringExpense?.amount) || 0).toFixed(2)),
-    currency: String(recurringExpense?.currency || "UAH"),
+    currency: normalizeCurrency(recurringExpense?.currency, "UAH"),
     description_raw: String(recurringExpense?.description_raw || "").trim(),
     category: String(recurringExpense?.category || "подписки").trim(),
     sub_category: String(recurringExpense?.sub_category || "подписки").trim(),
@@ -1085,6 +1258,21 @@ function sanitizeRecurringExpense(recurringExpense, nextId) {
     notes: String(recurringExpense?.notes || ""),
     active: recurringExpense?.active !== false,
     last_materialized_at: String(recurringExpense?.last_materialized_at || ""),
+  };
+}
+
+function sanitizeSettings(settings) {
+  const safeSettings = settings || {};
+  const rawCategories = Array.isArray(safeSettings.category_catalog)
+    ? safeSettings.category_catalog
+    : String(safeSettings.category_catalog || "").split(/\n|,/);
+
+  return {
+    daily_limit: Math.max(0, Number(safeSettings.daily_limit) || 0),
+    monthly_limit: Math.max(0, Number(safeSettings.monthly_limit) || 0),
+    default_currency: normalizeCurrency(safeSettings.default_currency, "UAH"),
+    display_currency: normalizeCurrency(safeSettings.display_currency, "USD"),
+    category_catalog: [...new Set(rawCategories.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean))].sort(),
   };
 }
 
@@ -1215,7 +1403,11 @@ function getRecurringPeriodKey(frequency, dateValue) {
     const start = new Date(date);
     const day = start.getDay() || 7;
     start.setDate(start.getDate() - day + 1);
-    return start.toISOString().slice(0, 10);
+    return [
+      start.getFullYear(),
+      String(start.getMonth() + 1).padStart(2, "0"),
+      String(start.getDate()).padStart(2, "0"),
+    ].join("-");
   }
 
   return String(dateValue).slice(0, 7);
@@ -1233,6 +1425,49 @@ function parseCryptoPriceIds(url) {
   }
 
   return [...new Set(ids)].slice(0, 50);
+}
+
+function parseExchangeRateSymbols(url) {
+  const symbols = String(url.searchParams.get("symbols") || "USD,EUR,PLN")
+    .split(",")
+    .map((symbol) => normalizeCurrency(symbol, ""))
+    .filter((symbol) => symbol && symbol !== "UAH");
+
+  return [...new Set(symbols)].slice(0, 10);
+}
+
+async function fetchExchangeRates(symbols) {
+  const rates = { UAH: 1 };
+  const updatedDates = [];
+
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      const rateUrl = new URL("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange");
+      rateUrl.searchParams.set("valcode", symbol);
+      rateUrl.searchParams.set("json", "");
+      const response = await fetch(rateUrl.toString());
+      if (!response.ok) {
+        throw new Error(`Exchange rate request failed with status ${response.status}.`);
+      }
+
+      const data = await response.json();
+      const item = Array.isArray(data) ? data[0] : null;
+      const rate = Number(item?.rate) || 0;
+      if (rate > 0) {
+        rates[symbol] = Number(rate.toFixed(6));
+      }
+      if (item?.exchangedate) {
+        updatedDates.push(String(item.exchangedate));
+      }
+    }),
+  );
+
+  return {
+    base: "UAH",
+    rates,
+    updated_at: updatedDates.sort().at(-1) || new Date().toISOString(),
+    source: "NBU",
+  };
 }
 
 async function fetchCryptoPrices(ids, env) {
@@ -1282,6 +1517,7 @@ async function resetAllData(env, authContext) {
     clearJsonRecords(env, authContext, "crypto_assets", "crypto_assets:"),
     clearJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:"),
     clearJsonRecords(env, authContext, "materialized_recurring", MATERIALIZED_RECURRING_PREFIX),
+    env.EXPENSES_KV?.delete(getUserKeyPrefix(authContext, "settings")),
   ]);
 }
 
@@ -1518,6 +1754,41 @@ function combineInferenceText(description, hint) {
   return `${description} ${hint}`.trim();
 }
 
+function normalizeCurrency(value, fallbackValue = "UAH") {
+  const normalized = String(value || "").trim().toUpperCase();
+  const fallback = String(fallbackValue || "UAH").trim().toUpperCase();
+  if (SUPPORTED_CURRENCIES.has(normalized)) {
+    return normalized;
+  }
+
+  return SUPPORTED_CURRENCIES.has(fallback) ? fallback : "UAH";
+}
+
+function inferCurrency(text, fallbackValue = "UAH") {
+  const lowered = String(text || "").toLowerCase();
+  if (/(?:\$|usd|dollar|dollars|бакс|баксы|доллар)/i.test(lowered)) {
+    return "USD";
+  }
+
+  if (/(?:€|eur|euro|евро)/i.test(lowered)) {
+    return "EUR";
+  }
+
+  if (/(?:zł|pln|злот)/i.test(lowered)) {
+    return "PLN";
+  }
+
+  if (/(?:rub|ruble|rubles|₽|руб)/i.test(lowered)) {
+    return "RUB";
+  }
+
+  if (/(?:₴|uah|грн|грив)/i.test(lowered)) {
+    return "UAH";
+  }
+
+  return normalizeCurrency(fallbackValue, "UAH");
+}
+
 function buildExistingCatalogs(expenses) {
   return {
     category: uniqueNonEmpty(expenses.map((expense) => expense.category)).filter((value) => value !== "other"),
@@ -1602,3 +1873,23 @@ function formatForWhomDecisionLabel(value) {
 
   return labels[value] || value;
 }
+
+export const __workerTestables = {
+  buildExistingCatalogs,
+  buildNormalizationDecision,
+  calculateTotalAmount,
+  cleanJsonText,
+  fallbackNormalize,
+  getRecurringPeriodKey,
+  getUserKeyPrefix,
+  inferCategories,
+  inferForWhom,
+  inferProductName,
+  isRecurringDue,
+  parseQuickExpenseText,
+  sanitizeCryptoAsset,
+  sanitizeExpense,
+  sanitizeIncome,
+  sanitizeRecurringExpense,
+  sanitizeSettings,
+};

@@ -25,6 +25,7 @@ cp .dev.vars.example .dev.vars
 - `DEV_TELEGRAM_USER_ID`: optional local development fallback user id
 - `LEGACY_DATA_OWNER_TELEGRAM_ID`: optional Telegram user id that can see old unscoped KV data
 - `OPENAI_API_KEY`: OpenAI API key for expense normalization
+- `OPENAI_TRANSCRIBE_MODEL`: optional speech-to-text model for Telegram voice input, default `gpt-4o-mini-transcribe`
 - `COINGECKO_API_KEY`: optional CoinGecko demo API key
 
 3. Run the Worker locally if Wrangler is installed:
@@ -130,6 +131,8 @@ The Worker validates the Telegram signature with `TELEGRAM_BOT_TOKEN` and stores
 - `GET /api/incomes`
 - `GET /api/crypto-assets`
 - `GET /api/recurring-expenses`
+- `GET /api/settings`
+- `GET /api/exchange-rates?symbols=USD,EUR,PLN,RUB`
 - `GET /api/crypto-prices?ids=bitcoin,ethereum`
 - `POST /api/normalize-expense`
 - `POST /api/add-expense`
@@ -139,6 +142,7 @@ The Worker validates the Telegram signature with `TELEGRAM_BOT_TOKEN` and stores
 - `POST /api/add-recurring-expense`
 - `POST /api/materialize-recurring-expenses`
 - `POST /api/reset-data`
+- `PUT /api/settings`
 - `DELETE /api/expenses/:id`
 - `DELETE /api/incomes/:id`
 - `DELETE /api/crypto-assets/:id`

@@ -1,9 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SpendSoul">
-  <rect width="512" height="512" fill="#05070b"/>
-  <path fill="#101722" d="M64 64h384v384H64z"/>
-  <path fill="#4285f4" d="M64 64h384v36H64z"/>
-  <path fill="#fbbc05" d="M112 338h288v44H112z"/>
-  <path fill="#34a853" d="M112 250h190v44H112z"/>
-  <path fill="#ea4335" d="M112 162h236v44H112z"/>
-  <path fill="#f4f7fb" d="M256 116c72 0 120 33 120 83h-64c0-18-20-31-56-31-34 0-54 10-54 27 0 20 24 26 72 37 58 14 111 33 111 88 0 53-49 86-126 86-82 0-134-38-134-95h65c0 27 27 43 70 43 38 0 61-12 61-31 0-22-26-29-78-41-56-13-105-31-105-83 0-50 46-83 118-83Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" role="img" aria-label="SpendSoul">
+  <rect width="1080" height="1080" fill="#141414"/>
+  <rect x="70" y="70" width="220" height="118" fill="#1967c9"/>
+  <rect x="290" y="70" width="240" height="118" fill="#cf131a"/>
+  <rect x="530" y="70" width="240" height="118" fill="#ffd400"/>
+  <rect x="770" y="70" width="240" height="118" fill="#2da11c"/>
+  <text
+    x="540"
+    y="948"
+    fill="#f8f8f8"
+    font-family="Arial Black, Arial, Helvetica, sans-serif"
+    font-size="930"
+    font-weight="900"
+    text-anchor="middle"
+    letter-spacing="-42"
+    transform="skewX(-6)"
+  >S</text>
 </svg>
