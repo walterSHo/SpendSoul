@@ -664,7 +664,8 @@ async function handleSubmit(event) {
   }
 
   setLoading(true);
-  setStatus("Нормализую трату...");
+  setStatus("ИИ распознает трату...");
+  setAiThinking(statusMessage, true);
 
   try {
     const normalizedResult = await normalizeExpense(payload);
@@ -677,6 +678,7 @@ async function handleSubmit(event) {
   } catch (error) {
     setStatus(error.message || "Не удалось сохранить трату.", true);
   } finally {
+    setAiThinking(statusMessage, false);
     setLoading(false);
   }
 }
@@ -700,7 +702,8 @@ async function handleQuickExpenseSubmit(event) {
 
   quickExpenseSubmitButton.disabled = true;
   quickExpenseSubmitButton.textContent = "Понимаю...";
-  setQuickExpenseStatus("Обрабатываю быстрый ввод...");
+  setQuickExpenseStatus(entryType === "expense" ? "ИИ распознает быстрый ввод..." : "Обрабатываю быстрый ввод...");
+  setAiThinking(quickExpenseStatusMessage, entryType === "expense");
 
   try {
     if (entryType === "income") {
@@ -768,6 +771,7 @@ async function handleQuickExpenseSubmit(event) {
   } catch (error) {
     setQuickExpenseStatus(error.message || "Не удалось обработать быстрый ввод.", true);
   } finally {
+    setAiThinking(quickExpenseStatusMessage, false);
     quickExpenseSubmitButton.disabled = false;
     quickExpenseSubmitButton.textContent = "Добавить";
   }
@@ -1263,33 +1267,32 @@ function handleViewTabClick(event) {
   closeQuickAddSheet();
   const target = event.currentTarget.dataset.viewTarget;
   const isTodayView = target === "today";
+  const isExpenseView = target === "expenses";
   const isIncomeView = target === "incomes";
   const isCryptoView = target === "crypto";
+  const isRecurringView = target === "recurring";
   const isSettingsView = target === "settings";
 
   todayView?.classList.toggle("hidden", !isTodayView);
-  expensesView.classList.toggle("hidden", isTodayView || isIncomeView || isCryptoView || isSettingsView);
+  expensesView.classList.toggle("hidden", !isExpenseView);
   incomesView.classList.toggle("hidden", !isIncomeView);
   cryptoView.classList.toggle("hidden", !isCryptoView);
-  recurringView.classList.toggle("hidden", !isSettingsView);
+  recurringView.classList.toggle("hidden", !isRecurringView);
   settingsView?.classList.toggle("hidden", !isSettingsView);
   viewTabs.forEach((button) => button.classList.toggle("active", button.dataset.viewTarget === target));
 }
 
 function handleQuickAdd() {
   const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "today";
-  const targetNode =
-    activeTarget === "today"
-      ? quickExpenseForm
-      : activeTarget === "expenses"
-        ? form
-        : activeTarget === "incomes"
-          ? incomeForm
-          : activeTarget === "crypto"
-            ? cryptoForm
-            : activeTarget === "settings"
-            ? settingsForm
-            : quickExpenseForm || form;
+  const targets = {
+    today: quickExpenseForm,
+    expenses: form,
+    incomes: incomeForm,
+    recurring: recurringForm,
+    crypto: cryptoForm,
+    settings: settingsForm,
+  };
+  const targetNode = targets[activeTarget] || quickExpenseForm || form;
 
   targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
   targetNode.querySelector("input, textarea, select")?.focus({ preventScroll: true });
@@ -2787,7 +2790,7 @@ function renderLatestExpenses() {
   latestExpenseList.innerHTML = latestItems
     .map((item, index) => {
       return `
-        <article class="latest-expense-card">
+        <article class="latest-expense-card latest-expense-card-${escapeHtml(item.type)}">
           <span class="latest-expense-index">${String(index + 1).padStart(2, "0")}</span>
           <div>
             <strong>${escapeHtml(shortenText(item.title, 28))}</strong>
@@ -4119,6 +4122,14 @@ function setQuickExpenseStatus(message, isError = false) {
   quickExpenseStatusMessage.textContent = getInlineStatusMessage(message, isError);
   quickExpenseStatusMessage.classList.toggle("error", isError);
   maybeShowStatusToast(message, isError);
+}
+
+function setAiThinking(node, isThinking) {
+  if (!node) {
+    return;
+  }
+
+  node.classList.toggle("ai-thinking", Boolean(isThinking));
 }
 
 function setSettingsStatus(message, isError = false) {
