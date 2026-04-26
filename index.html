@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>SpendSoul</title>
     <script>
       if (window.location.hostname.endsWith("github.io") && window.location.pathname === "/SpendSoul") {
@@ -15,12 +18,15 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./style.css?v=20260426-13" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./icons/spendsoul-icon.svg" />
+    <link rel="apple-touch-icon" href="./icons/spendsoul-icon.svg" />
+    <link rel="stylesheet" href="./style.css?v=20260426-15" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="./config.js?v=20260426-2"></script>
     <script src="./config.local.js?v=20260426-2"></script>
-    <script type="module" src="./app.js?v=20260426-15" defer></script>
+    <script type="module" src="./app.js?v=20260426-17" defer></script>
   </head>
   <body>
     <div class="page-shell">
@@ -71,7 +77,10 @@
                 Зафиксируйте трату как сигнал. ИИ распознает товар, категорию, получателя и подготовит чистую запись.
               </p>
             </div>
-            <div class="panel-chip">Ввод онлайн</div>
+            <div class="hero-form-actions">
+              <div class="panel-chip">Ввод онлайн</div>
+              <button type="button" id="quickSheetCloseButton" class="quick-sheet-close" aria-label="Закрыть быстрый ввод"></button>
+            </div>
           </div>
 
           <form id="expenseForm" class="expense-form hero-expense-form">
@@ -91,6 +100,7 @@
                     name="amount"
                     min="0"
                     step="0.01"
+                    inputmode="decimal"
                     placeholder="0.00"
                     required
                   />
@@ -100,7 +110,7 @@
                   <span>Количество</span>
                   <div class="stepper-field">
                     <button type="button" class="stepper-button stepper-button-minus" id="quantityDownButton" aria-label="Уменьшить количество"></button>
-                    <input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required />
+                    <input type="number" id="quantity" name="quantity" min="1" step="1" value="1" inputmode="numeric" required />
                     <button type="button" class="stepper-button stepper-button-plus" id="quantityUpButton" aria-label="Увеличить количество"></button>
                   </div>
                 </label>
@@ -312,7 +322,7 @@
 
               <label>
                 <span>Сумма</span>
-                <input type="number" id="incomeAmount" name="incomeAmount" min="0" step="0.01" placeholder="0.00" required />
+                <input type="number" id="incomeAmount" name="incomeAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required />
               </label>
 
               <label class="full-width">
@@ -416,12 +426,12 @@
 
               <label>
                 <span>Количество монет</span>
-                <input type="number" id="cryptoAmountHeld" name="cryptoAmountHeld" min="0" step="0.00000001" placeholder="0.00000000" required />
+                <input type="number" id="cryptoAmountHeld" name="cryptoAmountHeld" min="0" step="0.00000001" inputmode="decimal" placeholder="0.00000000" required />
               </label>
 
               <label>
                 <span>Всего вложил, UAH</span>
-                <input type="number" id="cryptoInvestedAmount" name="cryptoInvestedAmount" min="0" step="0.01" placeholder="0.00" required />
+                <input type="number" id="cryptoInvestedAmount" name="cryptoInvestedAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required />
               </label>
 
               <label>
@@ -511,7 +521,7 @@
 
               <label>
                 <span>Сумма</span>
-                <input type="number" id="recurringAmount" min="0" step="0.01" placeholder="0.00" required />
+                <input type="number" id="recurringAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required />
               </label>
 
               <label>
@@ -600,6 +610,8 @@
 
       <button type="button" id="quickAddButton" class="quick-add-button" aria-label="Быстро добавить"></button>
     </div>
+
+    <div id="quickSheetOverlay" class="quick-sheet-overlay" aria-hidden="true"></div>
 
     <div id="confirmModal" class="modal hidden" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="true"></div>

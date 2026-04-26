@@ -438,8 +438,14 @@ async function handleTelegramWebhook(update, env) {
   await sendTelegramMessage(
     env,
     chatId,
-    `Готово, вход подтвержден. Вернитесь на SpendSoul: ${String(env.SITE_URL || DEFAULT_SITE_URL)}`,
+    `Готово, вход подтвержден. Вернитесь на SpendSoul: ${buildSiteLoginReturnUrl(env, nonce)}`,
   );
+}
+
+function buildSiteLoginReturnUrl(env, nonce) {
+  const siteUrl = new URL(String(env.SITE_URL || DEFAULT_SITE_URL));
+  siteUrl.searchParams.set("login_nonce", nonce);
+  return siteUrl.toString();
 }
 
 function extractLoginNonce(text) {

@@ -1,0 +1,19 @@
+{
+  "name": "SpendSoul",
+  "short_name": "SpendSoul",
+  "description": "Personal finance tracker with AI expense normalization.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#05070b",
+  "theme_color": "#05070b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icons/spendsoul-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

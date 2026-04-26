@@ -128,6 +128,8 @@ const recurringTableBody = document.querySelector("#recurringTableBody");
 const expenseSearchInput = document.querySelector("#expenseSearchInput");
 const syncBanner = document.querySelector("#syncBanner");
 const quickAddButton = document.querySelector("#quickAddButton");
+const quickSheetOverlay = document.querySelector("#quickSheetOverlay");
+const quickSheetCloseButton = document.querySelector("#quickSheetCloseButton");
 const themeToggleButton = document.querySelector("#themeToggleButton");
 const brandTitle = document.querySelector(".brand-title");
 
@@ -145,6 +147,7 @@ let pendingExpense = null;
 let pendingDecision = null;
 let pendingMode = "create";
 let isInitialSyncing = false;
+let suppressStatusToasts = true;
 let recentlySavedExpenseId = null;
 let recentlySavedIncomeId = null;
 let recentlySavedCryptoAssetId = null;
@@ -166,6 +169,7 @@ recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
 initializeTheme();
 initializeSoulMode();
 initializeTelegramApp();
+registerServiceWorker();
 if (hasTelegramAuth()) {
   syncExpensesOnLoad();
 } else {
@@ -178,6 +182,10 @@ if (hasTelegramAuth()) {
 }
 render();
 renderTelegramLoginGate();
+resumeBotLoginFromUrl();
+window.setTimeout(() => {
+  suppressStatusToasts = false;
+}, 600);
 
 form.addEventListener("submit", handleSubmit);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
@@ -188,6 +196,8 @@ resetServerButton?.addEventListener("click", handleResetServerData);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
 materializeRecurringButton?.addEventListener("click", handleMaterializeRecurring);
 quickAddButton.addEventListener("click", handleQuickAdd);
+quickSheetOverlay?.addEventListener("click", closeQuickAddSheet);
+quickSheetCloseButton?.addEventListener("click", closeQuickAddSheet);
 quantityDownButton.addEventListener("click", () => adjustQuantity(-1));
 quantityUpButton.addEventListener("click", () => adjustQuantity(1));
 categoryFilter.addEventListener("change", handleFiltersChange);
@@ -211,6 +221,7 @@ toggleConfirmEditButton.addEventListener("click", toggleConfirmEditor);
 confirmModal.addEventListener("click", handleConfirmBackdrop);
 viewTabs.forEach((button) => button.addEventListener("click", handleViewTabClick));
 document.addEventListener("click", handleDocumentClick);
+document.addEventListener("keydown", handleDocumentKeydown);
 themeToggleButton.addEventListener("click", toggleTheme);
 brandTitle?.addEventListener("click", handleBrandTitleClick);
 
@@ -257,6 +268,16 @@ function initializeSoulMode() {
   if (isSoulMode) {
     setSyncState(syncBanner?.dataset.state || "online", "Soul mode активен");
   }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !["https:", "http:"].includes(window.location.protocol)) {
+    return;
+  }
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+  });
 }
 
 function handleBrandTitleClick() {
@@ -428,12 +449,51 @@ function resumePendingBotLogin() {
     return;
   }
 
+  showBotLoginPollingState(pendingLogin);
+}
+
+function resumeBotLoginFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const nonce = sanitizeBotLoginNonce(params.get("login_nonce") || hashParams.get("login_nonce"));
+  if (!nonce || hasTelegramAuth()) {
+    return;
+  }
+
+  const pendingLogin = {
+    nonce,
+    expires_at: Math.floor(Date.now() / 1000) + 120,
+    bot_url: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=login_${nonce}`,
+  };
+  rememberPendingBotLogin(pendingLogin);
+  renderTelegramLoginGate();
+  showBotLoginPollingState(pendingLogin, "Проверяю подтверждение Telegram...");
+
+  params.delete("login_nonce");
+  hashParams.delete("login_nonce");
+  const nextSearch = params.toString();
+  const nextHash = hashParams.toString();
+  const cleanUrl = `${window.location.origin}${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${nextHash ? `#${nextHash}` : ""}`;
+  window.history.replaceState({}, document.title, cleanUrl);
+}
+
+function showBotLoginPollingState(pendingLogin, message = "") {
   const button = document.querySelector("#botLoginButton");
   const hint = document.querySelector("#telegramLoginHint");
+  if (!button || !hint) {
+    return;
+  }
+
   button.disabled = true;
   button.textContent = "Проверяю вход...";
-  hint.innerHTML = `Если вы еще не нажали Start, <a href="${escapeHtml(pendingLogin.bot_url)}" target="_blank" rel="noopener">откройте Telegram</a>.`;
+  hint.innerHTML =
+    message ||
+    `Если вы еще не нажали Start, <a href="${escapeHtml(pendingLogin.bot_url)}" target="_blank" rel="noopener">откройте Telegram</a>.`;
   startBotLoginPolling(pendingLogin.nonce);
+}
+
+function sanitizeBotLoginNonce(value) {
+  return String(value || "").match(/^[a-f0-9]{32}$/i) ? String(value).toLowerCase() : "";
 }
 
 function startBotLoginPolling(nonce) {
@@ -542,6 +602,7 @@ async function handleSubmit(event) {
     pendingMode = "create";
     pendingExpense = normalizedResult.expense;
     pendingDecision = normalizedResult.decision;
+    closeQuickAddSheet();
     openConfirmDialog(normalizedResult.expense, normalizedResult.decision);
     setStatus("Проверьте нормализованную трату и подтвердите сохранение.");
   } catch (error) {
@@ -780,6 +841,7 @@ async function handleResetServerData() {
 }
 
 function handleViewTabClick(event) {
+  closeQuickAddSheet();
   const target = event.currentTarget.dataset.viewTarget;
   const isIncomeView = target === "incomes";
   const isCryptoView = target === "crypto";
@@ -794,6 +856,12 @@ function handleViewTabClick(event) {
 
 function handleQuickAdd() {
   const activeTarget = viewTabs.find((button) => button.classList.contains("active"))?.dataset.viewTarget || "expenses";
+
+  if (activeTarget === "expenses" && isMobileQuickSheetAvailable()) {
+    openQuickAddSheet();
+    return;
+  }
+
   const targetNode =
     activeTarget === "incomes"
       ? incomeForm
@@ -805,6 +873,22 @@ function handleQuickAdd() {
 
   targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
   targetNode.querySelector("input, textarea, select")?.focus({ preventScroll: true });
+}
+
+function isMobileQuickSheetAvailable() {
+  return Boolean(window.matchMedia?.("(max-width: 860px)").matches);
+}
+
+function openQuickAddSheet() {
+  document.body.classList.add("quick-sheet-open");
+  quickSheetOverlay?.setAttribute("aria-hidden", "false");
+  const preferredInput = descriptionInput.value.trim() ? amountInput : descriptionInput;
+  window.setTimeout(() => preferredInput.focus({ preventScroll: true }), 180);
+}
+
+function closeQuickAddSheet() {
+  document.body.classList.remove("quick-sheet-open");
+  quickSheetOverlay?.setAttribute("aria-hidden", "true");
 }
 
 function handleDocumentClick(event) {
@@ -822,6 +906,12 @@ function handleDocumentClick(event) {
       customSelect.querySelector(".custom-select-button")?.setAttribute("aria-expanded", "false");
     }
   });
+}
+
+function handleDocumentKeydown(event) {
+  if (event.key === "Escape") {
+    closeQuickAddSheet();
+  }
 }
 
 function initializeCustomSelects() {
@@ -1674,6 +1764,7 @@ async function syncExpensesOnLoad() {
   syncFilterOptions();
   render();
   setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Локальный кеш" : "Сервер подключен");
+  suppressStatusToasts = false;
   refreshCryptoPrices();
 }
 
@@ -2678,6 +2769,7 @@ function renderPieChart(existingChart, selector, dataset, colors) {
 
 function renderBarChart(existingChart, selector, dataset, color) {
   const canvas = document.querySelector(selector);
+  const compactChart = isCompactChartViewport();
 
   if (existingChart) {
     existingChart.destroy();
@@ -2727,9 +2819,9 @@ function renderBarChart(existingChart, selector, dataset, color) {
             padding: 12,
             font: {
               family: "Manrope",
-              size: 13,
-              weight: "700",
-              lineHeight: 1.2,
+              size: compactChart ? 11 : 13,
+              weight: compactChart ? "500" : "650",
+              lineHeight: compactChart ? 1.12 : 1.2,
             },
           },
           grid: {
@@ -2746,8 +2838,8 @@ function renderBarChart(existingChart, selector, dataset, color) {
             padding: 8,
             font: {
               family: "Manrope",
-              size: 11,
-              weight: "700",
+              size: compactChart ? 10 : 11,
+              weight: compactChart ? "500" : "650",
             },
           },
           grid: {
@@ -2760,6 +2852,10 @@ function renderBarChart(existingChart, selector, dataset, color) {
       },
     },
   });
+}
+
+function isCompactChartViewport() {
+  return Boolean(window.matchMedia?.("(max-width: 560px)").matches);
 }
 
 function syncFilterOptions() {
@@ -3130,7 +3226,7 @@ function getInlineStatusMessage(message, isError) {
 }
 
 function maybeShowStatusToast(message, isError) {
-  if (!message) {
+  if (!message || suppressStatusToasts) {
     return;
   }
 

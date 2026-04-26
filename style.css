@@ -161,6 +161,18 @@ select {
   }
 }
 
+@keyframes sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes row-in {
   from {
     opacity: 0;
@@ -602,6 +614,12 @@ p {
 
 .hero-form-head {
   margin-bottom: 14px;
+}
+
+.hero-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .hero-copy-card h2 {
@@ -1783,6 +1801,11 @@ tbody tr:hover .table-edit-button,
   line-height: 1;
 }
 
+.quick-sheet-close,
+.quick-sheet-overlay {
+  display: none;
+}
+
 .confirm-decision,
 .confirm-preview {
   margin-top: 18px;
@@ -1907,12 +1930,13 @@ tbody tr:hover .table-edit-button,
 
 @media (max-width: 860px) {
   body {
-    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
   }
 
   .page-shell {
-    width: min(100%, calc(100% - 20px));
-    padding: 12px 0 28px;
+    width: 100%;
+    padding: 0 10px 28px;
   }
 
   .hero-form-head,
@@ -1924,22 +1948,57 @@ tbody tr:hover .table-edit-button,
     align-items: flex-start;
   }
 
+  .hero-form-head {
+    flex-direction: row;
+  }
+
+  .hero-form-actions {
+    flex: 0 0 auto;
+  }
+
   .topbar {
     animation: none;
     transform: none;
+    position: sticky;
+    top: 0;
+    z-index: 70;
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
-    margin-bottom: 14px;
-    padding: 12px;
+    gap: 10px;
+    margin: 0 -10px 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+    border-width: 0 0 1px;
+    border-top: 0;
+    background:
+      linear-gradient(180deg, rgba(12, 17, 26, 0.96), rgba(12, 17, 26, 0.88)),
+      var(--panel);
+    backdrop-filter: blur(18px);
+  }
+
+  body[data-theme="light"] .topbar {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 247, 251, 0.9)),
+      var(--panel);
   }
 
   .topbar-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     justify-items: stretch;
+    gap: 8px;
   }
 
   .sync-banner {
+    overflow: hidden;
     text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .theme-toggle-button {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 11px;
   }
 
   .brand-block {
@@ -2004,27 +2063,89 @@ tbody tr:hover .table-edit-button,
 
   .view-tabs {
     position: fixed;
-    inset: auto 0 0;
+    inset: auto 10px max(8px, env(safe-area-inset-bottom));
     z-index: 90;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: 100%;
-    min-height: calc(64px + env(safe-area-inset-bottom));
-    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
-    border-width: 1px 0 0;
-    background: var(--line);
+    width: auto;
+    min-height: 66px;
+    padding: 5px;
+    border: 1px solid rgba(244, 247, 251, 0.08);
+    background:
+      linear-gradient(180deg, rgba(16, 23, 34, 0.94), rgba(9, 13, 20, 0.96)),
+      var(--panel);
+    box-shadow: 0 -14px 36px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(18px);
+  }
+
+  body[data-theme="light"] .view-tabs {
+    border-color: rgba(40, 54, 77, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(238, 243, 251, 0.96)),
+      var(--panel);
+    box-shadow: 0 -12px 34px rgba(40, 54, 77, 0.16);
   }
 
   .view-tab {
-    min-height: 48px;
+    display: grid;
+    grid-template-rows: 24px auto;
+    align-content: center;
+    gap: 2px;
+    min-height: 56px;
     flex: 1 1 0;
     justify-content: center;
-    padding: 0 8px;
-    font-size: 11px;
+    padding: 4px 3px;
+    background: transparent;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .view-tab::before {
+    position: relative;
+    inset: auto;
+    display: block;
+    width: 24px;
+    height: 24px;
+    margin: 0 auto;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+    color: var(--soft);
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms var(--ease-soft);
+  }
+
+  .view-tab[data-view-target="expenses"]::before {
+    content: "₴";
+  }
+
+  .view-tab[data-view-target="incomes"]::before {
+    content: "+";
+  }
+
+  .view-tab[data-view-target="crypto"]::before {
+    content: "◇";
+  }
+
+  .view-tab[data-view-target="recurring"]::before {
+    content: "↻";
   }
 
   .view-tab.active {
-    background: var(--panel-2);
+    background: rgba(244, 247, 251, 0.06);
+    color: var(--text);
+  }
+
+  .view-tab.active::before {
+    border-color: var(--yellow);
+    background: var(--yellow);
+    color: #05070b;
+    transform: translateY(-1px);
   }
 
   .panel,
@@ -2032,6 +2153,15 @@ tbody tr:hover .table-edit-button,
   .hero-stat-card,
   .modal-card {
     padding: 14px;
+  }
+
+  .app-view {
+    display: grid;
+    gap: 12px;
+  }
+
+  .app-view.hidden {
+    display: none;
   }
 
   .hero-grid,
@@ -2045,6 +2175,7 @@ tbody tr:hover .table-edit-button,
   .latest-strip {
     gap: 10px;
     margin-bottom: 14px;
+    overflow: hidden;
   }
 
   .latest-strip-head,
@@ -2135,8 +2266,10 @@ tbody tr:hover .table-edit-button,
   }
 
   tbody tr {
+    overflow: hidden;
     padding: 10px 12px;
     border: 1px solid var(--line);
+    border-left: 4px solid var(--blue);
     background: var(--panel);
   }
 
@@ -2147,6 +2280,7 @@ tbody tr:hover .table-edit-button,
     align-items: start;
     padding: 9px 0;
     border-bottom: 1px solid var(--line);
+    word-break: break-word;
   }
 
   tbody td:last-child {
@@ -2167,6 +2301,21 @@ tbody tr:hover .table-edit-button,
 
   tbody td[colspan]::before {
     content: none !important;
+  }
+
+  table:not(.income-table):not(.crypto-table):not(.recurring-table) tbody td:nth-child(1),
+  .income-table tbody td:nth-child(1),
+  .recurring-table tbody td:nth-child(1) {
+    display: none;
+  }
+
+  table:not(.income-table):not(.crypto-table):not(.recurring-table) tbody td:nth-child(3),
+  .income-table tbody td:nth-child(3),
+  .crypto-table tbody td:nth-child(4),
+  .recurring-table tbody td:nth-child(3) {
+    color: var(--yellow);
+    font-size: 18px;
+    font-weight: 900;
   }
 
   table:not(.income-table):not(.crypto-table):not(.recurring-table) tbody td:nth-child(1)::before { content: "№"; }
@@ -2205,7 +2354,7 @@ tbody tr:hover .table-edit-button,
 
   .table-actions-cell {
     display: flex;
-    justify-content: flex-end;
+    justify-content: stretch;
     gap: 8px;
     width: 100%;
     padding-top: 10px;
@@ -2216,6 +2365,8 @@ tbody tr:hover .table-edit-button,
   }
 
   .table-icon-button {
+    flex: 1 1 0;
+    min-height: 42px;
     margin-left: 0;
   }
 
@@ -2226,21 +2377,130 @@ tbody tr:hover .table-edit-button,
 
   .quick-add-button {
     display: inline-grid;
-    bottom: calc(78px + env(safe-area-inset-bottom));
+    right: 18px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    width: 58px;
+    min-width: 58px;
+    min-height: 58px;
+    box-shadow: 0 14px 34px rgba(66, 133, 244, 0.28);
+  }
+
+  .quick-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 105;
+    display: block;
+    background: rgba(0, 0, 0, 0.58);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  body.quick-sheet-open .quick-sheet-overlay {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .quick-sheet-close {
+    position: relative;
+    display: none;
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-color: var(--line);
+    background: var(--bg-soft);
+  }
+
+  .quick-sheet-close::before,
+  .quick-sheet-close::after {
+    content: "";
+    position: absolute;
+    left: 13px;
+    right: 13px;
+    top: 20px;
+    height: 2px;
+    background: var(--text);
+  }
+
+  .quick-sheet-close::before {
+    transform: rotate(45deg);
+  }
+
+  .quick-sheet-close::after {
+    transform: rotate(-45deg);
+  }
+
+  body.quick-sheet-open {
+    overflow: hidden;
+  }
+
+  body.quick-sheet-open .hero-copy-card-wide {
+    position: fixed;
+    inset: auto 10px max(8px, env(safe-area-inset-bottom));
+    z-index: 110;
+    max-height: min(86vh, 760px);
+    overflow: auto;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--blue);
+    background: var(--panel);
+    box-shadow: 0 -24px 52px rgba(0, 0, 0, 0.42);
+    animation: sheet-rise 220ms var(--ease-out) both;
+  }
+
+  body.quick-sheet-open .quick-sheet-close {
+    display: inline-grid;
+    place-items: center;
+  }
+
+  body.quick-sheet-open .quick-add-button,
+  body.quick-sheet-open .view-tabs {
+    pointer-events: none;
+  }
+
+  .toast-host {
+    right: 10px;
+    bottom: calc(164px + env(safe-area-inset-bottom));
+    width: calc(100vw - 20px);
+  }
+
+  .modal {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .modal-card {
+    width: 100%;
+    max-height: min(86vh, 820px);
+    border-width: 1px 1px 0;
+    border-top: 4px solid var(--blue);
   }
 }
 
 @media (max-width: 560px) {
   .latest-strip {
-    display: block;
+    display: grid;
+    gap: 8px;
   }
 
   .latest-expense-list {
-    display: none;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(178px, 72%);
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scroll-snap-type: x mandatory;
   }
 
   .latest-strip-head {
     min-height: 0;
+  }
+
+  .latest-expense-card {
+    min-height: 116px;
+    scroll-snap-align: start;
   }
 
   .latest-count-line strong {
@@ -2273,6 +2533,21 @@ tbody tr:hover .table-edit-button,
   .modal-card {
     width: 100%;
     max-height: calc(100vh - 20px);
+  }
+}
+
+@media (max-width: 390px) {
+  .topbar h1 {
+    font-size: 26px;
+  }
+
+  .view-tab {
+    font-size: 9px;
+  }
+
+  tbody td {
+    grid-template-columns: minmax(78px, 34%) minmax(0, 1fr);
+    gap: 8px;
   }
 }
 
