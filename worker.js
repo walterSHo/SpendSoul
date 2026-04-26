@@ -407,7 +407,16 @@ async function handleTelegramWebhook(update, env) {
   const chatId = message?.chat?.id;
   const nonce = extractLoginNonce(text);
 
-  if (!nonce || !from?.id || !chatId || !env.EXPENSES_KV) {
+  if (!chatId) {
+    return;
+  }
+
+  if (!nonce) {
+    await sendTelegramAppLaunchMessage(env, chatId);
+    return;
+  }
+
+  if (!from?.id || !env.EXPENSES_KV) {
     return;
   }
 
@@ -438,14 +447,28 @@ async function handleTelegramWebhook(update, env) {
   await sendTelegramMessage(
     env,
     chatId,
-    `Готово, вход подтвержден. Вернитесь на SpendSoul: ${buildSiteLoginReturnUrl(env, nonce)}`,
+    "Готово, вход подтвержден. Откройте SpendSoul кнопкой ниже.",
+    buildTelegramAppReplyMarkup(env),
   );
 }
 
-function buildSiteLoginReturnUrl(env, nonce) {
-  const siteUrl = new URL(String(env.SITE_URL || DEFAULT_SITE_URL));
-  siteUrl.searchParams.set("login_nonce", nonce);
-  return siteUrl.toString();
+async function sendTelegramAppLaunchMessage(env, chatId) {
+  await sendTelegramMessage(env, chatId, "Откройте SpendSoul прямо в Telegram.", buildTelegramAppReplyMarkup(env));
+}
+
+function buildTelegramAppReplyMarkup(env) {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "Открыть SpendSoul",
+          web_app: {
+            url: String(env.SITE_URL || DEFAULT_SITE_URL),
+          },
+        },
+      ],
+    ],
+  };
 }
 
 function extractLoginNonce(text) {
@@ -492,9 +515,19 @@ async function signTelegramLoginPayload(user, env) {
   return JSON.stringify(payload);
 }
 
-async function sendTelegramMessage(env, chatId, text) {
+async function sendTelegramMessage(env, chatId, text, replyMarkup = null) {
   if (!env.TELEGRAM_BOT_TOKEN) {
     return;
+  }
+
+  const body = {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+  };
+
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
   }
 
   await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -502,11 +535,7 @@ async function sendTelegramMessage(env, chatId, text) {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
