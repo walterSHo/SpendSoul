@@ -234,9 +234,25 @@ function renderTelegramLoginGate() {
   gate.className = "telegram-login-gate";
   gate.innerHTML = `
     <div class="telegram-login-card">
-      <p class="telegram-login-kicker">SpendSoul</p>
-      <h2>Войдите через Telegram</h2>
-      <p>Авторизация идет через @${escapeHtml(TELEGRAM_BOT_USERNAME)}. После входа расходы будут привязаны к вашему Telegram ID.</p>
+      <div class="telegram-login-brand">
+        <div class="brand-mark telegram-login-mark" aria-hidden="true">
+          <span class="brand-symbol">₴</span>
+        </div>
+        <div>
+          <p class="telegram-login-kicker">Обсерватория личных расходов</p>
+          <h2>SpendSoul</h2>
+        </div>
+      </div>
+      <div class="telegram-login-copy">
+        <p class="telegram-login-label">Защищенный вход</p>
+        <h3>Войдите через Telegram</h3>
+        <p>Авторизация идет через @${escapeHtml(TELEGRAM_BOT_USERNAME)}. Данные расходов будут привязаны к вашему Telegram ID.</p>
+      </div>
+      <div class="telegram-login-meta" aria-label="Что произойдет после входа">
+        <span>Личный KV-профиль</span>
+        <span>Раздельные расходы</span>
+        <span>Синхронизация с Worker</span>
+      </div>
       <div id="telegramLoginButton" class="telegram-login-button"></div>
       <p id="telegramLoginHint" class="telegram-login-hint"></p>
     </div>
