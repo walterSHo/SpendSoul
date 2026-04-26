@@ -4,7 +4,21 @@ compatibility_date = "2026-04-24"
 
 [vars]
 OPENAI_MODEL = "gpt-4.1-mini"
+TELEGRAM_AUTH_MAX_AGE_SECONDS = "86400"
+
+# Secrets required in Cloudflare:
+# - TELEGRAM_BOT_TOKEN
+# - OPENAI_API_KEY
+# Optional:
+# - COINGECKO_API_KEY
+# - LEGACY_DATA_OWNER_TELEGRAM_ID
+#
+# Set with:
+# wrangler secret put TELEGRAM_BOT_TOKEN
+# wrangler secret put OPENAI_API_KEY
+# wrangler secret put COINGECKO_API_KEY
+# wrangler secret put LEGACY_DATA_OWNER_TELEGRAM_ID
 
 [[kv_namespaces]]
 binding = "EXPENSES_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "b9970e48c6494bc2aa01b8532e371cf0"

@@ -1,8 +1,14 @@
-const STORAGE_KEY = "spendsoul-expenses";
-const INCOME_STORAGE_KEY = "spendsoul-incomes";
-const CRYPTO_STORAGE_KEY = "spendsoul-crypto-assets";
-const RECURRING_STORAGE_KEY = "spendsoul-recurring-expenses";
-const WORKER_BASE_URL = "https://spendsoul-api.waltershcroder.workers.dev";
+const APP_CONFIG = window.SPENDSOUL_CONFIG || {};
+const WORKER_BASE_URL = normalizeWorkerBaseUrl(APP_CONFIG.workerBaseUrl || "");
+const TELEGRAM_AUTH_HEADER = "X-Telegram-Init-Data";
+const TELEGRAM_LOGIN_AUTH_HEADER = "X-Telegram-Auth-Data";
+const TELEGRAM_LOGIN_STORAGE_KEY = "spendsoul-telegram-login";
+const TELEGRAM_BOT_USERNAME = String(APP_CONFIG.telegramBotUsername || "spendsoul_bot").replace(/^@/, "");
+const STORAGE_OWNER_KEY = getStorageOwnerKey();
+const STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-expenses`;
+const INCOME_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-incomes`;
+const CRYPTO_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-crypto-assets`;
+const RECURRING_STORAGE_KEY = `spendsoul-${STORAGE_OWNER_KEY}-recurring-expenses`;
 const ALLOWED_FOR_WHOM = new Set([
   "myself",
   "friend",
@@ -145,8 +151,19 @@ const customSelects = new WeakMap();
 dateInput.value = new Date().toISOString().slice(0, 10);
 incomeDateInput.value = new Date().toISOString().slice(0, 10);
 recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
-syncExpensesOnLoad();
+initializeTelegramApp();
+if (hasTelegramAuth()) {
+  syncExpensesOnLoad();
+} else {
+  isOfflineMode = true;
+  setSyncState("offline", "Войдите через Telegram");
+  setStatus("Войдите через @spendsoul_bot, чтобы загрузить ваши расходы.", true);
+  setIncomeStatus("Войдите через Telegram, чтобы загрузить доходы.", true);
+  setCryptoStatus("Войдите через Telegram, чтобы загрузить крипто портфель.", true);
+  setRecurringStatus("Войдите через Telegram, чтобы загрузить регулярные расходы.", true);
+}
 render();
+renderTelegramLoginGate();
 
 form.addEventListener("submit", handleSubmit);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
@@ -184,6 +201,64 @@ document.addEventListener("click", handleDocumentClick);
 [dateInput, incomeDateInput, dateFromFilter, dateToFilter, recurringStartDateInput].forEach(bindNativeDatePicker);
 initializeCustomSelects();
 
+function blockOfflineWrite(setter) {
+  if (!isOfflineMode) {
+    return false;
+  }
+
+  setter("Сервер недоступен: показан локальный кеш, изменения временно отключены. Обновите страницу после восстановления связи.", true);
+  return true;
+}
+
+function initializeTelegramApp() {
+  if (!window.Telegram?.WebApp) {
+    return;
+  }
+
+  window.Telegram.WebApp.ready();
+  window.Telegram.WebApp.expand();
+}
+
+function hasTelegramAuth() {
+  return Boolean(getTelegramInitData() || getTelegramLoginAuthData() || APP_CONFIG.devStorageUserId);
+}
+
+function renderTelegramLoginGate() {
+  if (hasTelegramAuth() || document.querySelector("#telegramLoginGate")) {
+    return;
+  }
+
+  const gate = document.createElement("div");
+  gate.id = "telegramLoginGate";
+  gate.className = "telegram-login-gate";
+  gate.innerHTML = `
+    <div class="telegram-login-card">
+      <p class="telegram-login-kicker">SpendSoul</p>
+      <h2>Войдите через Telegram</h2>
+      <p>Авторизация идет через @${escapeHtml(TELEGRAM_BOT_USERNAME)}. После входа расходы будут привязаны к вашему Telegram ID.</p>
+      <div id="telegramLoginButton" class="telegram-login-button"></div>
+    </div>
+  `;
+  document.body.append(gate);
+
+  window.handleTelegramLogin = handleTelegramLogin;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://telegram.org/js/telegram-widget.js?22";
+  script.dataset.telegramLogin = TELEGRAM_BOT_USERNAME;
+  script.dataset.size = "large";
+  script.dataset.radius = "8";
+  script.dataset.userpic = "false";
+  script.dataset.requestAccess = "write";
+  script.dataset.onauth = "handleTelegramLogin(user)";
+  document.querySelector("#telegramLoginButton").append(script);
+}
+
+function handleTelegramLogin(user) {
+  localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(user));
+  window.location.reload();
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
 
@@ -204,6 +279,10 @@ async function handleSubmit(event) {
     payload.quantity < 1
   ) {
     setStatus("Заполните дату, сумму, количество и описание.", true);
+    return;
+  }
+
+  if (blockOfflineWrite(setStatus)) {
     return;
   }
 
@@ -238,6 +317,10 @@ async function handleIncomeSubmit(event) {
 
   if (!payload.date || !payload.source || Number.isNaN(payload.amount) || payload.amount <= 0) {
     setIncomeStatus("Заполните дату, сумму и источник.", true);
+    return;
+  }
+
+  if (blockOfflineWrite(setIncomeStatus)) {
     return;
   }
 
@@ -288,6 +371,10 @@ async function handleCryptoSubmit(event) {
     return;
   }
 
+  if (blockOfflineWrite(setCryptoStatus)) {
+    return;
+  }
+
   setCryptoLoading(true);
   setCryptoStatus("Сохраняю позицию...");
 
@@ -329,6 +416,10 @@ async function handleRecurringSubmit(event) {
     return;
   }
 
+  if (blockOfflineWrite(setRecurringStatus)) {
+    return;
+  }
+
   setRecurringLoading(true);
   setRecurringStatus("Сохраняю регулярную трату...");
 
@@ -351,6 +442,10 @@ async function handleRecurringSubmit(event) {
 }
 
 async function handleMaterializeRecurring() {
+  if (blockOfflineWrite(setRecurringStatus)) {
+    return;
+  }
+
   materializeRecurringButton.disabled = true;
   setRecurringStatus("Создаю расходы за текущий период...");
 
@@ -393,12 +488,11 @@ function handleClearLocalStorage() {
 }
 
 async function handleResetServerData() {
-  const adminToken = prompt("ADMIN_TOKEN для полного сброса серверных данных");
-  if (!adminToken) {
+  if (blockOfflineWrite(setStatus)) {
     return;
   }
 
-  if (!confirm("Удалить все расходы, доходы, крипто позиции и регулярные правила на сервере?")) {
+  if (!confirm("Удалить все ваши расходы, доходы, крипто позиции и регулярные правила на сервере?")) {
     return;
   }
 
@@ -406,7 +500,7 @@ async function handleResetServerData() {
   setSyncState("loading", "Сбрасываю серверные данные...");
 
   try {
-    await resetServerData(adminToken.trim());
+    await resetServerData();
     handleClearLocalStorage();
     setSyncState("online", "Серверные данные очищены");
     setStatus("Серверные данные очищены.");
@@ -670,6 +764,10 @@ function handleRecurringTableClick(event) {
 }
 
 async function deleteExpenseById(id) {
+  if (blockOfflineWrite(setStatus)) {
+    return;
+  }
+
   if (!Number.isFinite(id) || !confirm("Удалить эту трату?")) {
     return;
   }
@@ -687,6 +785,10 @@ async function deleteExpenseById(id) {
 }
 
 async function deleteIncomeById(id) {
+  if (blockOfflineWrite(setIncomeStatus)) {
+    return;
+  }
+
   if (!Number.isFinite(id) || !confirm("Удалить этот доход?")) {
     return;
   }
@@ -703,6 +805,10 @@ async function deleteIncomeById(id) {
 }
 
 async function deleteCryptoAssetById(id) {
+  if (blockOfflineWrite(setCryptoStatus)) {
+    return;
+  }
+
   if (!Number.isFinite(id) || !confirm("Удалить эту крипто позицию?")) {
     return;
   }
@@ -719,6 +825,10 @@ async function deleteCryptoAssetById(id) {
 }
 
 async function deleteRecurringExpenseById(id) {
+  if (blockOfflineWrite(setRecurringStatus)) {
+    return;
+  }
+
   if (!Number.isFinite(id) || !confirm("Удалить эту регулярную трату?")) {
     return;
   }
@@ -750,8 +860,86 @@ function handleConfirmBackdrop(event) {
   }
 }
 
+function normalizeWorkerBaseUrl(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function getStorageOwnerKey() {
+  const telegramUser = getTelegramUser();
+  if (telegramUser?.id) {
+    return `tg-${telegramUser.id}`;
+  }
+
+  const loginUser = getTelegramLoginUser();
+  if (loginUser?.id) {
+    return `tg-${loginUser.id}`;
+  }
+
+  return String(APP_CONFIG.devStorageUserId || "telegram").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
+}
+
+function getTelegramInitData() {
+  return String(window.Telegram?.WebApp?.initData || APP_CONFIG.telegramInitData || "");
+}
+
+function getTelegramUser() {
+  const initData = getTelegramInitData();
+  if (!initData) {
+    return null;
+  }
+
+  try {
+    const user = new URLSearchParams(initData).get("user");
+    return user ? JSON.parse(user) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getTelegramLoginAuthData() {
+  return String(localStorage.getItem(TELEGRAM_LOGIN_STORAGE_KEY) || APP_CONFIG.telegramLoginAuthData || "");
+}
+
+function getTelegramLoginUser() {
+  const authData = getTelegramLoginAuthData();
+  if (!authData) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(authData);
+  } catch {
+    return null;
+  }
+}
+
+async function apiFetch(path, options = {}) {
+  const telegramInitData = getTelegramInitData();
+  const telegramLoginAuthData = getTelegramLoginAuthData();
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  if (telegramInitData) {
+    headers[TELEGRAM_AUTH_HEADER] = telegramInitData;
+  } else if (telegramLoginAuthData) {
+    headers[TELEGRAM_LOGIN_AUTH_HEADER] = telegramLoginAuthData;
+  }
+
+  const response = await fetch(`${WORKER_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401 && telegramLoginAuthData) {
+    localStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
+  }
+
+  return response;
+}
+
 async function createExpense(payload) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/add-expense`, {
+  const response = await apiFetch("/api/add-expense", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -774,7 +962,7 @@ async function createExpense(payload) {
 }
 
 async function createIncome(payload) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/add-income`, {
+  const response = await apiFetch("/api/add-income", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -797,7 +985,7 @@ async function createIncome(payload) {
 }
 
 async function createCryptoAsset(payload) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/add-crypto-asset`, {
+  const response = await apiFetch("/api/add-crypto-asset", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -820,7 +1008,7 @@ async function createCryptoAsset(payload) {
 }
 
 async function createRecurringExpense(payload) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/add-recurring-expense`, {
+  const response = await apiFetch("/api/add-recurring-expense", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -843,7 +1031,7 @@ async function createRecurringExpense(payload) {
 }
 
 async function deleteServerItem(resource, id) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/${resource}/${encodeURIComponent(id)}`, {
+  const response = await apiFetch(`/api/${resource}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 
@@ -862,7 +1050,7 @@ async function deleteServerItem(resource, id) {
 }
 
 async function materializeRecurringExpenses() {
-  const response = await fetch(`${WORKER_BASE_URL}/api/materialize-recurring-expenses`, {
+  const response = await apiFetch("/api/materialize-recurring-expenses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -884,12 +1072,9 @@ async function materializeRecurringExpenses() {
   return data.map(sanitizeExpense);
 }
 
-async function resetServerData(adminToken) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/reset-data`, {
+async function resetServerData() {
+  const response = await apiFetch("/api/reset-data", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${adminToken}`,
-    },
   });
 
   let data;
@@ -907,7 +1092,7 @@ async function resetServerData(adminToken) {
 }
 
 async function normalizeExpense(payload) {
-  const response = await fetch(`${WORKER_BASE_URL}/api/normalize-expense`, {
+  const response = await apiFetch("/api/normalize-expense", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -933,7 +1118,7 @@ async function normalizeExpense(payload) {
 }
 
 async function fetchExpenses() {
-  const response = await fetch(`${WORKER_BASE_URL}/api/expenses`);
+  const response = await apiFetch("/api/expenses");
 
   let data;
   try {
@@ -950,7 +1135,7 @@ async function fetchExpenses() {
 }
 
 async function fetchIncomes() {
-  const response = await fetch(`${WORKER_BASE_URL}/api/incomes`);
+  const response = await apiFetch("/api/incomes");
 
   let data;
   try {
@@ -967,7 +1152,7 @@ async function fetchIncomes() {
 }
 
 async function fetchCryptoAssets() {
-  const response = await fetch(`${WORKER_BASE_URL}/api/crypto-assets`);
+  const response = await apiFetch("/api/crypto-assets");
 
   let data;
   try {
@@ -984,7 +1169,7 @@ async function fetchCryptoAssets() {
 }
 
 async function fetchRecurringExpenses() {
-  const response = await fetch(`${WORKER_BASE_URL}/api/recurring-expenses`);
+  const response = await apiFetch("/api/recurring-expenses");
 
   let data;
   try {
@@ -1005,7 +1190,7 @@ async function fetchCryptoPrices(ids) {
     return {};
   }
 
-  const response = await fetch(`${WORKER_BASE_URL}/api/crypto-prices?ids=${encodeURIComponent(ids.join(","))}`);
+  const response = await apiFetch(`/api/crypto-prices?ids=${encodeURIComponent(ids.join(","))}`);
 
   let data;
   try {
@@ -2409,6 +2594,10 @@ async function refreshCryptoPrices() {
 
 async function handleConfirmSave() {
   if (!pendingExpense) {
+    return;
+  }
+
+  if (blockOfflineWrite(setStatus)) {
     return;
   }
 

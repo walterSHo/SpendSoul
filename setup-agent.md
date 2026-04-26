@@ -1,82 +1,55 @@
-# Setup Agent
+# SpendSoul Setup Notes
 
-## Цель
+## Current State
 
-Подготовить базовую конфигурацию агента для проекта `SpendSoul`, чтобы можно было:
+SpendSoul is an existing personal finance tracker, not an empty starter project.
 
-- описать назначение агента;
-- зафиксировать окружение и зависимости;
-- определить первый рабочий сценарий;
-- вести TODO по настройке.
+Repository contents:
 
-## Текущее состояние
+- `index.html`: static application shell
+- `style.css`: UI styling
+- `app.js`: browser app, local cache, charts, forms, API client
+- `config.js`: frontend Worker URL
+- `worker.js`: Cloudflare Worker API
+- `wrangler.toml`: Worker deployment config
+- `.dev.vars.example`: local secret template for Wrangler
+- `README.md`: setup, auth, API, and deploy instructions
 
-На момент инициализации:
+## Runtime Requirements
 
-- в проекте найден только этот файл;
-- git-репозиторий не инициализирован;
-- код и конфигурация агента ещё не добавлены.
+- Cloudflare Workers
+- Cloudflare KV namespace bound as `EXPENSES_KV`
+- Worker secrets:
+  - `TELEGRAM_BOT_TOKEN`
+  - `OPENAI_API_KEY`
+  - optional `TELEGRAM_AUTH_MAX_AGE_SECONDS`
+  - optional `DEV_TELEGRAM_USER_ID` for local development
+  - optional `LEGACY_DATA_OWNER_TELEGRAM_ID` for old unscoped KV data
+  - optional `COINGECKO_API_KEY`
 
-## Что должен делать агент
+## Development Checklist
 
-Базовая версия агента должна уметь:
+1. Copy `.dev.vars.example` to `.dev.vars`.
+2. Fill local secrets.
+3. Replace `REPLACE_WITH_KV_NAMESPACE_ID` in `wrangler.toml` with a real KV namespace id.
+4. Check `config.js` points to the correct Worker URL.
+5. Run syntax checks:
 
-1. Понимать цель проекта.
-2. Читать локальные инструкции и конфигурацию.
-3. Выполнять пошаговые задачи по setup и development workflow.
-4. Логировать прогресс и незавершённые шаги.
-
-## Минимальная структура проекта
-
-Рекомендуемая стартовая структура:
-
-```text
-SpendSoul/
-├── setup-agent.md
-├── README.md
-├── .env.example
-├── config/
-│   └── agent.json
-├── scripts/
-│   └── setup.sh
-└── logs/
-    └── .gitkeep
+```sh
+node --check worker.js
+node --check app.js
 ```
 
-## Первый план запуска
+6. Deploy with Wrangler when ready:
 
-1. Описать задачу агента в одном абзаце.
-2. Добавить `README.md` с инструкцией запуска.
-3. Создать `config/agent.json` с базовыми параметрами.
-4. Добавить `scripts/setup.sh` для локальной инициализации.
-5. Инициализировать git после появления первых файлов проекта.
-
-## Черновик конфигурации агента
-
-Пример структуры:
-
-```json
-{
-  "name": "spendsoul-agent",
-  "version": "0.1.0",
-  "goal": "Помогать с настройкой и развитием проекта SpendSoul",
-  "language": "ru",
-  "logLevel": "info"
-}
+```sh
+wrangler deploy
 ```
 
-## TODO
+## Current Architecture Notes
 
-- Уточнить, для чего именно нужен агент в `SpendSoul`.
-- Определить стек проекта.
-- Добавить реальные скрипты setup.
-- Создать базовую конфигурацию.
-- Подготовить репозиторий к первой фиксации.
-
-## Следующий практический шаг
-
-Если продолжаем без дополнительных вводных, логично следующим действием создать:
-
-- `README.md`
-- `config/agent.json`
-- `scripts/setup.sh`
+- All `/api/*` endpoints require Telegram auth: Mini App init data or Login Widget signed data.
+- New KV records are stored as individual keys by Telegram user id and collection prefix.
+- Legacy array keys are only read for `LEGACY_DATA_OWNER_TELEGRAM_ID`, so users do not see each other's data.
+- The browser does not prompt for API tokens; it either sends `window.Telegram.WebApp.initData` or shows Telegram Login for `@spendsoul_bot`.
+- Offline mode is read-only; local cache can be viewed, but server writes are blocked until sync is restored.

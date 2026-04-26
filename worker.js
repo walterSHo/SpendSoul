@@ -13,7 +13,7 @@ const ALLOWED_FOR_WHOM = new Set([
 const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Telegram-Init-Data,X-Telegram-Auth-Data",
 };
 
 export default {
@@ -28,23 +28,25 @@ export default {
     const url = new URL(request.url);
 
     try {
+      const authContext = url.pathname.startsWith("/api/") ? await getAuthContext(request, env) : null;
+
       if (request.method === "GET" && url.pathname === "/api/expenses") {
-        const expenses = await loadExpenses(env);
+        const expenses = await loadExpenses(env, authContext);
         return jsonResponse(expenses);
       }
 
       if (request.method === "GET" && url.pathname === "/api/incomes") {
-        const incomes = await loadIncomes(env);
+        const incomes = await loadIncomes(env, authContext);
         return jsonResponse(incomes);
       }
 
       if (request.method === "GET" && url.pathname === "/api/crypto-assets") {
-        const cryptoAssets = await loadCryptoAssets(env);
+        const cryptoAssets = await loadCryptoAssets(env, authContext);
         return jsonResponse(cryptoAssets);
       }
 
       if (request.method === "GET" && url.pathname === "/api/recurring-expenses") {
-        const recurringExpenses = await loadRecurringExpenses(env);
+        const recurringExpenses = await loadRecurringExpenses(env, authContext);
         return jsonResponse(recurringExpenses);
       }
 
@@ -58,8 +60,8 @@ export default {
         const body = await request.json();
         validateIncomingPayload(body);
 
-        const nextId = await getNextExpenseId(env);
-        const existingExpenses = await loadExpenses(env);
+        const nextId = await getNextExpenseId(env, authContext);
+        const existingExpenses = await loadExpenses(env, authContext);
         const normalizedExpense = await normalizeExpenseWithOpenAI(body, nextId, env, existingExpenses);
         const sanitizedExpense = sanitizeExpense(normalizedExpense, nextId, body);
         const decision = buildNormalizationDecision(sanitizedExpense, existingExpenses);
@@ -74,10 +76,10 @@ export default {
         const body = await request.json();
         validateIncomingPayload(body);
 
-        const nextId = Number(body?.id) || (await getNextExpenseId(env));
+        const nextId = Number(body?.id) || (await getNextExpenseId(env, authContext));
         const sanitizedExpense = sanitizeExpense(body, nextId, body);
 
-        await saveExpense(env, sanitizedExpense);
+        await saveExpense(env, authContext, sanitizedExpense);
         return jsonResponse(sanitizedExpense, 201);
       }
 
@@ -85,10 +87,10 @@ export default {
         const body = await request.json();
         validateIncomePayload(body);
 
-        const nextId = Number(body?.id) || (await getNextIncomeId(env));
+        const nextId = Number(body?.id) || (await getNextIncomeId(env, authContext));
         const sanitizedIncome = sanitizeIncome(body, nextId);
 
-        await saveIncome(env, sanitizedIncome);
+        await saveIncome(env, authContext, sanitizedIncome);
         return jsonResponse(sanitizedIncome, 201);
       }
 
@@ -96,10 +98,10 @@ export default {
         const body = await request.json();
         validateCryptoAssetPayload(body);
 
-        const nextId = Number(body?.id) || (await getNextCryptoAssetId(env));
+        const nextId = Number(body?.id) || (await getNextCryptoAssetId(env, authContext));
         const sanitizedCryptoAsset = sanitizeCryptoAsset(body, nextId);
 
-        await saveCryptoAsset(env, sanitizedCryptoAsset);
+        await saveCryptoAsset(env, authContext, sanitizedCryptoAsset);
         return jsonResponse(sanitizedCryptoAsset, 201);
       }
 
@@ -107,52 +109,51 @@ export default {
         const body = await request.json();
         validateRecurringExpensePayload(body);
 
-        const nextId = Number(body?.id) || (await getNextRecurringExpenseId(env));
+        const nextId = Number(body?.id) || (await getNextRecurringExpenseId(env, authContext));
         const sanitizedRecurringExpense = sanitizeRecurringExpense(body, nextId);
 
-        await saveRecurringExpense(env, sanitizedRecurringExpense);
+        await saveRecurringExpense(env, authContext, sanitizedRecurringExpense);
         return jsonResponse(sanitizedRecurringExpense, 201);
       }
 
       if (request.method === "POST" && url.pathname === "/api/materialize-recurring-expenses") {
         const body = await request.json();
-        const generatedExpenses = await materializeRecurringExpenses(env, body);
+        const generatedExpenses = await materializeRecurringExpenses(env, authContext, body);
         return jsonResponse(generatedExpenses, 201);
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/expenses/")) {
         const id = parsePathId(url.pathname, "/api/expenses/");
-        await deleteExpense(env, id);
+        await deleteExpense(env, authContext, id);
         return jsonResponse({ ok: true, id });
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/incomes/")) {
         const id = parsePathId(url.pathname, "/api/incomes/");
-        await deleteIncome(env, id);
+        await deleteIncome(env, authContext, id);
         return jsonResponse({ ok: true, id });
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/crypto-assets/")) {
         const id = parsePathId(url.pathname, "/api/crypto-assets/");
-        await deleteCryptoAsset(env, id);
+        await deleteCryptoAsset(env, authContext, id);
         return jsonResponse({ ok: true, id });
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/recurring-expenses/")) {
         const id = parsePathId(url.pathname, "/api/recurring-expenses/");
-        await deleteRecurringExpense(env, id);
+        await deleteRecurringExpense(env, authContext, id);
         return jsonResponse({ ok: true, id });
       }
 
       if (request.method === "POST" && url.pathname === "/api/reset-data") {
-        validateAdminRequest(request, env);
-        await resetAllData(env);
+        await resetAllData(env, authContext);
         return jsonResponse({ ok: true });
       }
 
       return jsonResponse({ error: "Not found" }, 404);
     } catch (error) {
-      const status = error instanceof RequestValidationError || error instanceof SyntaxError ? 400 : 500;
+      const status = getErrorStatus(error);
 
       return jsonResponse(
         {
@@ -165,6 +166,182 @@ export default {
 };
 
 class RequestValidationError extends Error {}
+class AuthorizationError extends Error {}
+class ConfigurationError extends Error {}
+
+function getErrorStatus(error) {
+  if (error instanceof AuthorizationError) {
+    return 401;
+  }
+
+  if (error instanceof RequestValidationError || error instanceof SyntaxError) {
+    return 400;
+  }
+
+  if (error instanceof ConfigurationError) {
+    return 500;
+  }
+
+  return 500;
+}
+
+async function getAuthContext(request, env) {
+  const initData = request.headers.get("X-Telegram-Init-Data") || "";
+  if (initData) {
+    return validateTelegramInitData(initData, env);
+  }
+
+  const loginAuthData = request.headers.get("X-Telegram-Auth-Data") || "";
+  if (loginAuthData) {
+    return validateTelegramLoginAuthData(loginAuthData, env);
+  }
+
+  if (env.DEV_TELEGRAM_USER_ID) {
+    return {
+      userId: String(env.DEV_TELEGRAM_USER_ID),
+      user: {
+        id: Number(env.DEV_TELEGRAM_USER_ID),
+        first_name: "Dev",
+      },
+    };
+  }
+
+  throw new AuthorizationError("Open SpendSoul from Telegram to authorize.");
+}
+
+async function validateTelegramLoginAuthData(authData, env) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new ConfigurationError("TELEGRAM_BOT_TOKEN is not configured.");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(authData);
+  } catch {
+    throw new AuthorizationError("Telegram login data is invalid.");
+  }
+
+  const receivedHash = String(payload.hash || "");
+  if (!receivedHash) {
+    throw new AuthorizationError("Telegram login hash is missing.");
+  }
+
+  const authDate = Number(payload.auth_date || 0);
+  const maxAgeSeconds = Number(env.TELEGRAM_AUTH_MAX_AGE_SECONDS || 86400);
+  if (!authDate || Date.now() / 1000 - authDate > maxAgeSeconds) {
+    throw new AuthorizationError("Telegram login is expired.");
+  }
+
+  const dataCheckString = Object.entries(payload)
+    .filter(([key, value]) => key !== "hash" && value !== undefined && value !== null)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  const secretKey = await sha256Bytes(env.TELEGRAM_BOT_TOKEN);
+  const calculatedHash = bytesToHex(await hmacSha256Bytes(secretKey, dataCheckString));
+  if (!constantTimeEqual(calculatedHash, receivedHash)) {
+    throw new AuthorizationError("Telegram login is invalid.");
+  }
+
+  if (!payload.id) {
+    throw new AuthorizationError("Telegram login user is missing.");
+  }
+
+  return {
+    userId: String(payload.id),
+    user: {
+      id: Number(payload.id),
+      first_name: String(payload.first_name || ""),
+      last_name: String(payload.last_name || ""),
+      username: String(payload.username || ""),
+      photo_url: String(payload.photo_url || ""),
+    },
+  };
+}
+
+async function validateTelegramInitData(initData, env) {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new ConfigurationError("TELEGRAM_BOT_TOKEN is not configured.");
+  }
+
+  const params = new URLSearchParams(initData);
+  const receivedHash = params.get("hash") || "";
+  params.delete("hash");
+
+  if (!receivedHash) {
+    throw new AuthorizationError("Telegram authorization hash is missing.");
+  }
+
+  const authDate = Number(params.get("auth_date") || 0);
+  const maxAgeSeconds = Number(env.TELEGRAM_AUTH_MAX_AGE_SECONDS || 86400);
+  if (!authDate || Date.now() / 1000 - authDate > maxAgeSeconds) {
+    throw new AuthorizationError("Telegram authorization is expired.");
+  }
+
+  const dataCheckString = [...params.entries()]
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  const secretKey = await hmacSha256Bytes("WebAppData", env.TELEGRAM_BOT_TOKEN);
+  const calculatedHash = bytesToHex(await hmacSha256Bytes(secretKey, dataCheckString));
+  if (!constantTimeEqual(calculatedHash, receivedHash)) {
+    throw new AuthorizationError("Telegram authorization is invalid.");
+  }
+
+  const user = parseTelegramUser(params.get("user"));
+  return {
+    userId: String(user.id),
+    user,
+  };
+}
+
+function parseTelegramUser(value) {
+  if (!value) {
+    throw new AuthorizationError("Telegram user is missing.");
+  }
+
+  try {
+    const user = JSON.parse(value);
+    if (!user?.id) {
+      throw new Error("Missing user id.");
+    }
+
+    return user;
+  } catch {
+    throw new AuthorizationError("Telegram user is invalid.");
+  }
+}
+
+async function hmacSha256Bytes(key, value) {
+  const rawKey = typeof key === "string" ? new TextEncoder().encode(key) : key;
+  const cryptoKey = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(String(value)));
+  return new Uint8Array(signature);
+}
+
+async function sha256Bytes(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return new Uint8Array(digest);
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function constantTimeEqual(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+
+  return mismatch === 0;
+}
 
 function validateIncomingPayload(body) {
   if (!body || typeof body !== "object") {
@@ -234,41 +411,66 @@ function validateRecurringExpensePayload(body) {
   }
 }
 
-async function loadExpenses(env) {
+async function loadExpenses(env, authContext) {
+  return loadJsonRecords(env, authContext, "expenses", "expenses:");
+}
+
+async function loadIncomes(env, authContext) {
+  return loadJsonRecords(env, authContext, "incomes", "incomes:");
+}
+
+async function loadCryptoAssets(env, authContext) {
+  return loadJsonRecords(env, authContext, "crypto_assets", "crypto_assets:");
+}
+
+async function loadRecurringExpenses(env, authContext) {
+  return loadJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:");
+}
+
+async function loadJsonRecords(env, authContext, legacyKey, recordPrefix) {
   if (!env.EXPENSES_KV) {
     return [];
   }
 
-  const raw = await env.EXPENSES_KV.get("expenses");
-  if (!raw) {
-    return [];
+  const merged = new Map();
+  for (const item of await loadLegacyJsonArray(env, authContext, legacyKey)) {
+    if (item?.id !== undefined) {
+      merged.set(Number(item.id), item);
+    }
   }
 
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  const scopedRecordPrefix = getUserKeyPrefix(authContext, recordPrefix);
+  let cursor;
+  do {
+    const listed = await env.EXPENSES_KV.list({ prefix: scopedRecordPrefix, cursor });
+    for (const key of listed.keys) {
+      const raw = await env.EXPENSES_KV.get(key.name);
+      if (!raw) {
+        continue;
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.id !== undefined) {
+          merged.set(Number(parsed.id), parsed);
+        }
+      } catch {}
+    }
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor);
+
+  return [...merged.values()];
+}
+
+async function loadLegacyJsonArray(env, authContext, key) {
+  if (env.LEGACY_DATA_OWNER_TELEGRAM_ID && String(env.LEGACY_DATA_OWNER_TELEGRAM_ID) === authContext.userId) {
+    return loadJsonArrayByKey(env, key);
   }
+
+  return loadJsonArrayByKey(env, getUserKeyPrefix(authContext, key));
 }
 
-async function loadIncomes(env) {
-  return loadJsonArray(env, "incomes");
-}
-
-async function loadCryptoAssets(env) {
-  return loadJsonArray(env, "crypto_assets");
-}
-
-async function loadRecurringExpenses(env) {
-  return loadJsonArray(env, "recurring_expenses");
-}
-
-async function loadJsonArray(env, key) {
-  if (!env.EXPENSES_KV) {
-    return [];
-  }
-
+async function loadJsonArrayByKey(env, key) {
   const raw = await env.EXPENSES_KV.get(key);
   if (!raw) {
     return [];
@@ -282,116 +484,125 @@ async function loadJsonArray(env, key) {
   }
 }
 
-async function saveExpense(env, expense) {
+async function saveExpense(env, authContext, expense) {
+  await putJsonRecord(env, authContext, "expenses:", expense);
+}
+
+async function saveIncome(env, authContext, income) {
+  await putJsonRecord(env, authContext, "incomes:", income);
+}
+
+async function saveCryptoAsset(env, authContext, cryptoAsset) {
+  await putJsonRecord(env, authContext, "crypto_assets:", cryptoAsset);
+}
+
+async function saveRecurringExpense(env, authContext, recurringExpense) {
+  await putJsonRecord(env, authContext, "recurring_expenses:", recurringExpense);
+}
+
+async function deleteExpense(env, authContext, id) {
+  await deleteJsonRecord(env, authContext, "expenses", "expenses:", id);
+}
+
+async function deleteIncome(env, authContext, id) {
+  await deleteJsonRecord(env, authContext, "incomes", "incomes:", id);
+}
+
+async function deleteCryptoAsset(env, authContext, id) {
+  await deleteJsonRecord(env, authContext, "crypto_assets", "crypto_assets:", id);
+}
+
+async function deleteRecurringExpense(env, authContext, id) {
+  await deleteJsonRecord(env, authContext, "recurring_expenses", "recurring_expenses:", id);
+}
+
+async function putJsonRecord(env, authContext, prefix, value) {
   if (!env.EXPENSES_KV) {
     return;
   }
 
-  const currentExpenses = await loadExpenses(env);
-  const nextExpenses = currentExpenses.filter((item) => Number(item?.id) !== Number(expense?.id));
-  nextExpenses.push(expense);
-  await env.EXPENSES_KV.put("expenses", JSON.stringify(nextExpenses));
+  await env.EXPENSES_KV.put(getUserKeyPrefix(authContext, `${prefix}${Number(value?.id)}`), JSON.stringify(value));
 }
 
-async function saveIncome(env, income) {
+async function deleteJsonRecord(env, authContext, legacyKey, prefix, id) {
   if (!env.EXPENSES_KV) {
     return;
   }
 
-  const currentIncomes = await loadIncomes(env);
-  const nextIncomes = currentIncomes.filter((item) => Number(item?.id) !== Number(income?.id));
-  nextIncomes.push(income);
-  await env.EXPENSES_KV.put("incomes", JSON.stringify(nextIncomes));
+  await env.EXPENSES_KV.delete(getUserKeyPrefix(authContext, `${prefix}${Number(id)}`));
+  const legacyItems = await loadLegacyJsonArray(env, authContext, legacyKey);
+  if (legacyItems.length) {
+    const nextLegacyItems = legacyItems.filter((item) => Number(item?.id) !== Number(id));
+    await env.EXPENSES_KV.put(getUserKeyPrefix(authContext, legacyKey), JSON.stringify(nextLegacyItems));
+  }
 }
 
-async function saveCryptoAsset(env, cryptoAsset) {
+async function clearJsonRecords(env, authContext, legacyKey, prefix) {
   if (!env.EXPENSES_KV) {
     return;
   }
 
-  const currentCryptoAssets = await loadCryptoAssets(env);
-  const nextCryptoAssets = currentCryptoAssets.filter((item) => Number(item?.id) !== Number(cryptoAsset?.id));
-  nextCryptoAssets.push(cryptoAsset);
-  await env.EXPENSES_KV.put("crypto_assets", JSON.stringify(nextCryptoAssets));
-}
-
-async function saveRecurringExpense(env, recurringExpense) {
-  if (!env.EXPENSES_KV) {
-    return;
+  await env.EXPENSES_KV.put(getUserKeyPrefix(authContext, legacyKey), JSON.stringify([]));
+  if (env.LEGACY_DATA_OWNER_TELEGRAM_ID && String(env.LEGACY_DATA_OWNER_TELEGRAM_ID) === authContext.userId) {
+    await env.EXPENSES_KV.put(legacyKey, JSON.stringify([]));
   }
 
-  const currentRecurringExpenses = await loadRecurringExpenses(env);
-  const nextRecurringExpenses = currentRecurringExpenses.filter((item) => Number(item?.id) !== Number(recurringExpense?.id));
-  nextRecurringExpenses.push(recurringExpense);
-  await env.EXPENSES_KV.put("recurring_expenses", JSON.stringify(nextRecurringExpenses));
+  const scopedPrefix = getUserKeyPrefix(authContext, prefix);
+  let cursor;
+  do {
+    const listed = await env.EXPENSES_KV.list({ prefix: scopedPrefix, cursor });
+    await Promise.all(listed.keys.map((key) => env.EXPENSES_KV.delete(key.name)));
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor);
 }
 
-async function deleteExpense(env, id) {
-  const currentExpenses = await loadExpenses(env);
-  await putJsonArray(env, "expenses", currentExpenses.filter((item) => Number(item?.id) !== Number(id)));
+function getUserKeyPrefix(authContext, key) {
+  return `users:${authContext.userId}:${key}`;
 }
 
-async function deleteIncome(env, id) {
-  const currentIncomes = await loadIncomes(env);
-  await putJsonArray(env, "incomes", currentIncomes.filter((item) => Number(item?.id) !== Number(id)));
-}
-
-async function deleteCryptoAsset(env, id) {
-  const currentCryptoAssets = await loadCryptoAssets(env);
-  await putJsonArray(env, "crypto_assets", currentCryptoAssets.filter((item) => Number(item?.id) !== Number(id)));
-}
-
-async function deleteRecurringExpense(env, id) {
-  const currentRecurringExpenses = await loadRecurringExpenses(env);
-  await putJsonArray(env, "recurring_expenses", currentRecurringExpenses.filter((item) => Number(item?.id) !== Number(id)));
-}
-
-async function putJsonArray(env, key, value) {
-  if (!env.EXPENSES_KV) {
-    return;
-  }
-
-  await env.EXPENSES_KV.put(key, JSON.stringify(Array.isArray(value) ? value : []));
-}
-
-async function getNextExpenseId(env) {
-  const expenses = await loadExpenses(env);
+async function getNextExpenseId(env, authContext) {
+  const expenses = await loadExpenses(env, authContext);
   const maxId = expenses.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
 
-  return maxId + 1;
+  return getNextRecordId(maxId);
 }
 
-async function getNextIncomeId(env) {
-  const incomes = await loadIncomes(env);
+async function getNextIncomeId(env, authContext) {
+  const incomes = await loadIncomes(env, authContext);
   const maxId = incomes.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
 
-  return maxId + 1;
+  return getNextRecordId(maxId);
 }
 
-async function getNextCryptoAssetId(env) {
-  const cryptoAssets = await loadCryptoAssets(env);
+async function getNextCryptoAssetId(env, authContext) {
+  const cryptoAssets = await loadCryptoAssets(env, authContext);
   const maxId = cryptoAssets.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
 
-  return maxId + 1;
+  return getNextRecordId(maxId);
 }
 
-async function getNextRecurringExpenseId(env) {
-  const recurringExpenses = await loadRecurringExpenses(env);
+async function getNextRecurringExpenseId(env, authContext) {
+  const recurringExpenses = await loadRecurringExpenses(env, authContext);
   const maxId = recurringExpenses.reduce((max, item) => {
     const numericId = Number(item.id) || 0;
     return Math.max(max, numericId);
   }, 0);
 
-  return maxId + 1;
+  return getNextRecordId(maxId);
+}
+
+function getNextRecordId(maxId) {
+  const timeId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  return Math.max(maxId + 1, timeId);
 }
 
 async function normalizeExpenseWithOpenAI(payload, nextId, env, existingExpenses = []) {
@@ -646,11 +857,11 @@ function sanitizeRecurringExpense(recurringExpense, nextId) {
   };
 }
 
-async function materializeRecurringExpenses(env, body) {
+async function materializeRecurringExpenses(env, authContext, body) {
   const targetDate = String(body?.date || new Date().toISOString().slice(0, 10));
-  const recurringExpenses = (await loadRecurringExpenses(env)).map((item) => sanitizeRecurringExpense(item, item?.id));
-  const currentExpenses = await loadExpenses(env);
-  let nextId = await getNextExpenseId(env);
+  const recurringExpenses = (await loadRecurringExpenses(env, authContext)).map((item) => sanitizeRecurringExpense(item, item?.id));
+  const currentExpenses = await loadExpenses(env, authContext);
+  let nextId = await getNextExpenseId(env, authContext);
   const generatedExpenses = [];
   const updatedRecurringExpenses = [];
 
@@ -707,9 +918,9 @@ async function materializeRecurringExpenses(env, body) {
   }
 
   if (generatedExpenses.length) {
-    await putJsonArray(env, "expenses", currentExpenses);
+    await Promise.all(generatedExpenses.map((expense) => saveExpense(env, authContext, expense)));
   }
-  await putJsonArray(env, "recurring_expenses", updatedRecurringExpenses);
+  await Promise.all(updatedRecurringExpenses.map((recurringExpense) => saveRecurringExpense(env, authContext, recurringExpense)));
 
   return generatedExpenses;
 }
@@ -788,23 +999,12 @@ function parsePathId(pathname, prefix) {
   return id;
 }
 
-function validateAdminRequest(request, env) {
-  if (!env.ADMIN_TOKEN) {
-    throw new RequestValidationError("ADMIN_TOKEN is not configured.");
-  }
-
-  const expectedHeader = `Bearer ${env.ADMIN_TOKEN}`;
-  if (request.headers.get("Authorization") !== expectedHeader) {
-    throw new RequestValidationError("Admin authorization is required.");
-  }
-}
-
-async function resetAllData(env) {
+async function resetAllData(env, authContext) {
   await Promise.all([
-    putJsonArray(env, "expenses", []),
-    putJsonArray(env, "incomes", []),
-    putJsonArray(env, "crypto_assets", []),
-    putJsonArray(env, "recurring_expenses", []),
+    clearJsonRecords(env, authContext, "expenses", "expenses:"),
+    clearJsonRecords(env, authContext, "incomes", "incomes:"),
+    clearJsonRecords(env, authContext, "crypto_assets", "crypto_assets:"),
+    clearJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:"),
   ]);
 }
 

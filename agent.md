@@ -45,10 +45,11 @@ Backend работает на Cloudflare Workers.
 
 Worker должен:
 
+- проверять Telegram Mini App `initData` или Telegram Login Widget auth для всех `/api/*` запросов;
 - принимать новые траты через HTTP API;
 - вызывать OpenAI API;
 - нормализовать данные в строго заданную JSON-схему;
-- сохранять расходы в JSON-массив и/или Cloudflare KV;
+- сохранять расходы в Cloudflare KV;
 - возвращать готовые нормализованные данные фронтенду.
 
 ### Хранение данных
@@ -120,11 +121,12 @@ Worker должен:
 При нажатии на кнопку `Сохранить`:
 
 1. фронтенд отправляет `POST` на:
-   `https://your-app.your-worker.workers.dev/api/add-expense`
+   `/api/normalize-expense`
 2. бэкенд нормализует данные через OpenAI API;
-3. фронтенд получает нормализованный JSON-объект;
-4. фронтенд сохраняет его в `localStorage`;
-5. фронтенд обновляет таблицу и диаграммы.
+3. фронтенд показывает модальное подтверждение;
+4. после подтверждения фронтенд отправляет `POST` на `/api/add-expense`;
+5. фронтенд сохраняет результат в `localStorage`;
+6. фронтенд обновляет таблицу и диаграммы.
 
 ### Получение списка трат
 
@@ -133,6 +135,20 @@ Endpoint:
 `GET /api/expenses`
 
 должен возвращать весь массив трат.
+
+Все endpoint-ы `/api/*` требуют заголовок:
+
+```http
+X-Telegram-Init-Data: <window.Telegram.WebApp.initData>
+```
+
+или:
+
+```http
+X-Telegram-Auth-Data: <signed Telegram login JSON>
+```
+
+Данные в KV должны быть разделены по Telegram user id, чтобы расходы разных людей не смешивались.
 
 ## Стиль кода
 
