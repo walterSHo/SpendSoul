@@ -2631,83 +2631,201 @@ tbody tr:hover .table-edit-button,
   }
 
   body[data-telegram-app="true"] .latest-strip {
-    gap: 6px;
-    margin-bottom: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 1px;
+    align-items: stretch;
+    margin-bottom: 8px;
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--green);
+    background: var(--line);
   }
 
   body[data-telegram-app="true"] .latest-strip-head,
   body[data-telegram-app="true"] .latest-expense-card {
-    padding: 10px;
+    min-height: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-top: 0;
+    background: var(--panel);
+  }
+
+  body[data-telegram-app="true"] .latest-strip-head {
+    align-content: center;
+    gap: 2px;
   }
 
   body[data-telegram-app="true"] .latest-label {
-    font-size: 9px;
+    display: none;
   }
 
   body[data-telegram-app="true"] .latest-count-line {
-    gap: 8px;
+    gap: 5px;
   }
 
   body[data-telegram-app="true"] .latest-count-line strong {
-    font-size: 32px;
+    font-size: 20px;
+    line-height: 1;
   }
 
   body[data-telegram-app="true"] .latest-count-line span {
-    font-size: 14px;
+    font-size: 12px;
+    line-height: 1.1;
   }
 
   body[data-telegram-app="true"] .latest-strip-head small {
-    font-size: 11px;
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-list {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
   }
 
   body[data-telegram-app="true"] .latest-expense-card {
-    min-height: 88px;
-    gap: 6px 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    align-items: center;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-card:nth-child(n + 2) {
+    display: none;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-index {
+    display: none;
   }
 
   body[data-telegram-app="true"] .latest-expense-card strong {
-    font-size: 14px;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   body[data-telegram-app="true"] .latest-expense-card small {
-    margin-top: 3px;
-    font-size: 11px;
+    margin-top: 1px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   body[data-telegram-app="true"] .latest-expense-card b {
-    font-size: 13px;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
   }
 }
 
 @media (max-width: 560px) {
   .latest-strip {
     display: grid;
-    gap: 8px;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 1px;
+    margin-bottom: 8px;
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--green);
+    background: var(--line);
   }
 
-  .latest-expense-list {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(178px, 72%);
-    grid-template-columns: none;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scroll-snap-type: x mandatory;
+  .latest-strip-head,
+  .latest-expense-card {
+    min-height: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-top: 0;
+    background: var(--panel);
   }
 
   .latest-strip-head {
-    min-height: 0;
+    align-content: center;
+    gap: 2px;
   }
 
-  .latest-expense-card {
-    min-height: 116px;
-    scroll-snap-align: start;
+  .latest-label {
+    display: none;
+  }
+
+  .latest-count-line {
+    gap: 5px;
   }
 
   .latest-count-line strong {
-    font-size: 38px;
+    font-size: 20px;
+    line-height: 1;
   }
 
+  .latest-count-line span {
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  .latest-strip-head small {
+    font-size: 9px;
+  }
+
+  .latest-expense-list {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .latest-expense-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    align-items: center;
+  }
+
+  .latest-expense-card:nth-child(n + 2) {
+    display: none;
+  }
+
+  .latest-expense-index {
+    display: none;
+  }
+
+  .latest-expense-card strong {
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .latest-expense-card small {
+    margin-top: 1px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .latest-expense-card b {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .latest-empty {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
   .form-actions {
     display: grid;
     grid-template-columns: 1fr;
