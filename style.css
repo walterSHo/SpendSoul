@@ -2213,7 +2213,25 @@ tbody tr:hover .table-edit-button,
   .hero-stat-card strong {
     max-width: 100%;
     overflow-wrap: anywhere;
-    font-size: clamp(34px, 12vw, 54px);
+    font-size: clamp(30px, 9vw, 42px);
+  }
+
+  .monthly-week-breakdown {
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .monthly-week-row {
+    gap: 8px;
+    padding-top: 5px;
+    font-size: 11px;
+  }
+
+  .monthly-week-row strong {
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: right;
   }
 
   .income-balance-list {
@@ -2589,7 +2607,11 @@ tbody tr:hover .table-edit-button,
   }
 
   body[data-telegram-app="true"] .hero-stat-card strong {
-    font-size: clamp(32px, 11vw, 46px);
+    font-size: clamp(28px, 8.5vw, 38px);
+  }
+
+  body[data-telegram-app="true"] .hero-stat-card {
+    gap: 8px;
   }
 
   body[data-telegram-app="true"] .income-balance-list strong {
@@ -2598,6 +2620,62 @@ tbody tr:hover .table-edit-button,
 
   body[data-telegram-app="true"] .income-balance-list span {
     font-size: 10px;
+  }
+
+  body[data-telegram-app="true"] .monthly-week-row {
+    font-size: 10px;
+  }
+
+  body[data-telegram-app="true"] .monthly-week-row strong {
+    font-size: 11px;
+  }
+
+  body[data-telegram-app="true"] .latest-strip {
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  body[data-telegram-app="true"] .latest-strip-head,
+  body[data-telegram-app="true"] .latest-expense-card {
+    padding: 10px;
+  }
+
+  body[data-telegram-app="true"] .latest-label {
+    font-size: 9px;
+  }
+
+  body[data-telegram-app="true"] .latest-count-line {
+    gap: 8px;
+  }
+
+  body[data-telegram-app="true"] .latest-count-line strong {
+    font-size: 32px;
+  }
+
+  body[data-telegram-app="true"] .latest-count-line span {
+    font-size: 14px;
+  }
+
+  body[data-telegram-app="true"] .latest-strip-head small {
+    font-size: 11px;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-card {
+    min-height: 88px;
+    gap: 6px 10px;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-card strong {
+    font-size: 14px;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-card small {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+
+  body[data-telegram-app="true"] .latest-expense-card b {
+    font-size: 13px;
   }
 }
 
