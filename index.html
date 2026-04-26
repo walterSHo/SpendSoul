@@ -21,12 +21,12 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icons/spendsoul-icon.svg" />
     <link rel="apple-touch-icon" href="./icons/spendsoul-icon.svg" />
-    <link rel="stylesheet" href="./style.css?v=20260426-26" />
+    <link rel="stylesheet" href="./style.css?v=20260426-32" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="./config.js?v=20260426-2"></script>
     <script src="./config.local.js?v=20260426-2"></script>
-    <script type="module" src="./app.js?v=20260426-26" defer></script>
+    <script type="module" src="./app.js?v=20260426-32" defer></script>
   </head>
   <body>
     <div class="page-shell">
@@ -66,8 +66,10 @@
             <span id="todayLimitMeter"></span>
           </div>
           <div class="today-mini-stats">
-            <span><strong id="todayExpenseCount">0</strong> записей</span>
-            <span><strong id="todayMonthTotal">0.00</strong> UAH за месяц</span>
+            <span><strong id="todayExpenseCount">0</strong> операций</span>
+            <span><strong id="todayIncomeAmount">0.00</strong> доход</span>
+            <span><strong id="todayMonthTotal">0.00</strong> расход</span>
+            <span><strong id="todayBalanceAmount">0.00</strong> месяц</span>
           </div>
         </div>
 
@@ -91,6 +93,7 @@
             />
           </label>
           <button type="submit" id="quickExpenseSubmitButton">Добавить</button>
+          <div id="quickInputHint" class="quick-input-hint">Расход: кофе 80 или такси домой 240</div>
           <p id="quickExpenseStatusMessage" class="status-message" aria-live="polite"></p>
         </form>
       </section>
@@ -105,6 +108,24 @@
           <small id="latestExpenseHint">Доходы, расходы, активы</small>
         </div>
         <div id="latestExpenseList" class="latest-expense-list"></div>
+      </section>
+
+      <section class="panel activity-panel">
+        <div class="panel-header-row">
+          <div class="panel-heading">
+            <p class="panel-label">Лента</p>
+            <h2>История операций</h2>
+            <p>Все последние движения в одном месте: расходы, доходы, подписки и активы.</p>
+          </div>
+          <select id="activityTypeFilter" class="compact-select">
+            <option value="all">Все</option>
+            <option value="expense">Расходы</option>
+            <option value="income">Доходы</option>
+            <option value="recurring">Подписки</option>
+            <option value="crypto">Активы</option>
+          </select>
+        </div>
+        <div id="activityFeed" class="activity-feed"></div>
       </section>
       </div>
 
@@ -347,12 +368,12 @@
             <p class="hero-kicker">Поступление денег</p>
             <div class="hero-form-head">
               <div>
-                <h2>Новый доход</h2>
-                <p class="hero-copy">
+                <h2 id="incomeFormTitle">Новый доход</h2>
+                <p id="incomeFormCopy" class="hero-copy">
                   Записывайте зарплату, возвраты, подарки и любые поступления отдельно от расходов.
                 </p>
               </div>
-              <div class="panel-chip">Плюс к балансу</div>
+              <div id="incomeFormChip" class="panel-chip">Плюс к балансу</div>
             </div>
 
             <form id="incomeForm" class="expense-form hero-expense-form">
@@ -367,6 +388,17 @@
                 <input type="number" id="incomeAmount" name="incomeAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required />
               </label>
 
+              <label>
+                <span>Валюта</span>
+                <select id="incomeCurrency" name="incomeCurrency">
+                  <option value="UAH">UAH · гривна</option>
+                  <option value="USD">USD · доллар</option>
+                  <option value="EUR">EUR · евро</option>
+                  <option value="PLN">PLN · злотый</option>
+                  <option value="RUB">RUB · рубль</option>
+                </select>
+              </label>
+
               <label class="full-width">
                 <span>Источник</span>
                 <input type="text" id="incomeSource" name="incomeSource" placeholder="Например: зарплата, фриланс, возврат долга" required />
@@ -379,6 +411,7 @@
 
               <div class="form-actions">
                 <button type="submit" id="incomeSubmitButton">Сохранить доход</button>
+                <button type="button" id="cancelIncomeEditButton" class="ghost-button hidden">Отменить правку</button>
               </div>
 
               <p id="incomeStatusMessage" class="status-message" aria-live="polite"></p>
@@ -435,12 +468,12 @@
             <p class="hero-kicker">Крипто портфель</p>
             <div class="hero-form-head">
               <div>
-                <h2>Новая позиция</h2>
-                <p class="hero-copy">
+                <h2 id="cryptoFormTitle">Новая позиция</h2>
+                <p id="cryptoFormCopy" class="hero-copy">
                   Укажите монету, сколько держите и сколько всего вложили. Текущую стоимость посчитаем по live-цене.
                 </p>
               </div>
-              <div class="panel-chip">Live price</div>
+              <div id="cryptoFormChip" class="panel-chip">Live price</div>
             </div>
 
             <form id="cryptoForm" class="expense-form hero-expense-form">
@@ -483,6 +516,7 @@
 
               <div class="form-actions">
                 <button type="submit" id="cryptoSubmitButton">Сохранить позицию</button>
+                <button type="button" id="cancelCryptoEditButton" class="ghost-button hidden">Отменить правку</button>
                 <button type="button" id="refreshCryptoPricesButton" class="ghost-button">Обновить цены</button>
               </div>
 
@@ -546,12 +580,12 @@
             <p class="hero-kicker">Контроль подписок</p>
             <div class="hero-form-head">
               <div>
-                <h2>Подписка</h2>
-                <p class="hero-copy">
+                <h2 id="recurringFormTitle">Подписка</h2>
+                <p id="recurringFormCopy" class="hero-copy">
                   Сохраняйте сервисы и регулярные платежи, чтобы видеть, что можно отключить для экономии.
                 </p>
               </div>
-              <div class="panel-chip">Экономия</div>
+              <div id="recurringFormChip" class="panel-chip">Экономия</div>
             </div>
 
             <form id="recurringForm" class="expense-form hero-expense-form">
@@ -564,6 +598,17 @@
               <label>
                 <span>Сумма</span>
                 <input type="number" id="recurringAmount" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required />
+              </label>
+
+              <label>
+                <span>Валюта</span>
+                <select id="recurringCurrency">
+                  <option value="UAH">UAH · гривна</option>
+                  <option value="USD">USD · доллар</option>
+                  <option value="EUR">EUR · евро</option>
+                  <option value="PLN">PLN · злотый</option>
+                  <option value="RUB">RUB · рубль</option>
+                </select>
               </label>
 
               <label>
@@ -607,6 +652,7 @@
 
               <div class="form-actions">
                 <button type="submit" id="recurringSubmitButton">Сохранить подписку</button>
+                <button type="button" id="cancelRecurringEditButton" class="ghost-button hidden">Отменить правку</button>
               </div>
 
               <p id="recurringStatusMessage" class="status-message" aria-live="polite"></p>
@@ -662,6 +708,24 @@
               <div class="panel-chip">Личный профиль</div>
             </div>
 
+            <div class="settings-guide" aria-label="Гайд по настройкам">
+              <div>
+                <span>01</span>
+                <strong>Лимиты</strong>
+                <small>Задайте дневной и месячный темп.</small>
+              </div>
+              <div>
+                <span>02</span>
+                <strong>Валюты</strong>
+                <small>Выберите базовую валюту и эквивалент.</small>
+              </div>
+              <div>
+                <span>03</span>
+                <strong>Категории</strong>
+                <small>Поправки помогают ИИ узнавать ваш стиль.</small>
+              </div>
+            </div>
+
             <form id="settingsForm" class="expense-form hero-expense-form">
               <label>
                 <span>Дневной лимит</span>
@@ -691,17 +755,21 @@
                   <option value="RUB">RUB · рубль</option>
                 </select>
               </label>
-              <label class="full-width">
-                <span>Категории справочника</span>
-                <textarea id="categoryCatalogInput" rows="5" placeholder="еда, транспорт, дом, подписки, здоровье"></textarea>
-              </label>
               <div class="form-actions full-width">
-                <button type="submit" id="settingsSubmitButton">Сохранить настройки</button>
+                <button type="submit" id="settingsSubmitButton">Сохранить лимиты</button>
                 <button type="button" id="refreshExchangeRatesButton" class="ghost-button icon-only-button refresh-rates-button" aria-label="Обновить курсы"></button>
               </div>
               <p id="exchangeRateStatusMessage" class="exchange-rate-status">Курс ещё не загружен</p>
               <p id="settingsStatusMessage" class="status-message" aria-live="polite"></p>
             </form>
+
+            <div class="settings-danger-zone">
+              <div>
+                <strong>Серверная история</strong>
+                <span>Удалит ваши расходы, доходы, активы и подписки только для текущего Telegram-пользователя. Настройки и категории останутся.</span>
+              </div>
+              <button type="button" id="resetServerHistoryButton" class="ghost-button danger-button">Очистить историю</button>
+            </div>
           </div>
 
           <div class="hero-stat-card settings-stat-card">
@@ -727,6 +795,24 @@
               <p class="panel-label">Справочник</p>
               <h2>Категории</h2>
               <p>SpendSoul использует этот список как ориентир для быстрого ввода и подсказок ИИ.</p>
+            </div>
+            <button type="submit" form="settingsForm" class="ghost-button">Сохранить справочник</button>
+          </div>
+          <div class="category-catalog-controls">
+            <label>
+              <span>Категории справочника</span>
+              <textarea id="categoryCatalogInput" form="settingsForm" rows="4" placeholder="еда, транспорт, дом, подписки, здоровье"></textarea>
+            </label>
+            <div class="category-tools">
+              <label>
+                <span>Переименовать / объединить</span>
+                <input type="text" id="categoryRenameFromInput" placeholder="Старая категория" />
+              </label>
+              <label>
+                <span>В новую категорию</span>
+                <input type="text" id="categoryRenameToInput" placeholder="Новая категория" />
+              </label>
+              <button type="button" id="categoryRenameButton" class="ghost-button">Применить</button>
             </div>
           </div>
           <div id="categoryCatalogList" class="category-catalog-list"></div>

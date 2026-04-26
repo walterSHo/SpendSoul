@@ -132,6 +132,7 @@ The Worker validates the Telegram signature with `TELEGRAM_BOT_TOKEN` and stores
 - `GET /api/crypto-assets`
 - `GET /api/recurring-expenses`
 - `GET /api/settings`
+- `GET /api/health`
 - `GET /api/exchange-rates?symbols=USD,EUR,PLN,RUB`
 - `GET /api/crypto-prices?ids=bitcoin,ethereum`
 - `POST /api/normalize-expense`
@@ -141,6 +142,7 @@ The Worker validates the Telegram signature with `TELEGRAM_BOT_TOKEN` and stores
 - `POST /api/add-crypto-asset`
 - `POST /api/add-recurring-expense`
 - `POST /api/materialize-recurring-expenses`
+- `POST /api/reset-history`
 - `POST /api/reset-data`
 - `PUT /api/settings`
 - `DELETE /api/expenses/:id`

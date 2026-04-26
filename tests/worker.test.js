@@ -189,6 +189,78 @@ test("settings endpoint sanitizes and scopes user preferences", async () => {
   assert.ok(kv.records.has("users:3003:settings"));
 });
 
+test("reset-history clears only the authorized user's records and preserves settings", async () => {
+  const kv = new FakeKV();
+  const env = buildEnv(5005, kv);
+  const otherEnv = buildEnv(6006, kv);
+
+  await worker.fetch(
+    new Request("https://spendsoul.test/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        daily_limit: 700,
+        category_catalog: ["еда", "транспорт"],
+      }),
+    }),
+    env,
+  );
+  await worker.fetch(
+    new Request("https://spendsoul.test/api/add-expense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        date: "2026-04-26",
+        amount: 80,
+        quantity: 1,
+        description_raw: "кофе",
+      }),
+    }),
+    env,
+  );
+  await worker.fetch(
+    new Request("https://spendsoul.test/api/add-expense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        date: "2026-04-26",
+        amount: 50,
+        quantity: 1,
+        description_raw: "такси",
+      }),
+    }),
+    otherEnv,
+  );
+
+  const resetResponse = await worker.fetch(
+    new Request("https://spendsoul.test/api/reset-history", { method: "POST" }),
+    env,
+  );
+  assert.equal(resetResponse.status, 200);
+
+  assert.deepEqual(await readJson(await worker.fetch(new Request("https://spendsoul.test/api/expenses"), env)), []);
+  assert.equal((await readJson(await worker.fetch(new Request("https://spendsoul.test/api/expenses"), otherEnv))).length, 1);
+  assert.deepEqual(await readJson(await worker.fetch(new Request("https://spendsoul.test/api/settings"), env)), {
+    daily_limit: 700,
+    monthly_limit: 0,
+    default_currency: "UAH",
+    display_currency: "USD",
+    category_catalog: ["еда", "транспорт"],
+  });
+});
+
+test("health endpoint exposes supported API features without auth", async () => {
+  const response = await worker.fetch(new Request("https://spendsoul.test/api/health"), {});
+  const data = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(data.ok, true);
+  assert.ok(data.features.includes("exchange-rates"));
+  assert.ok(data.features.includes("multi-currency"));
+});
+
 test("Telegram quick text parser extracts amount and description", () => {
   const payload = __workerTestables.parseQuickExpenseText("такси домой 240 грн");
   assert.equal(payload.amount, 240);
@@ -207,4 +279,82 @@ test("Telegram quick text parser detects explicit rubles", () => {
   const payload = __workerTestables.parseQuickExpenseText("кофе 300₽");
   assert.equal(payload.amount, 300);
   assert.equal(payload.currency, "RUB");
+});
+
+test("Telegram expense message waits for inline confirmation before saving", async () => {
+  const kv = new FakeKV();
+  const env = buildEnv(4004, kv);
+  const messageUpdate = {
+    message: {
+      message_id: 10,
+      text: "кофе 80",
+      chat: { id: 4004 },
+      from: { id: 4004, first_name: "Max" },
+    },
+  };
+
+  const messageResponse = await worker.fetch(
+    new Request("https://spendsoul.test/telegram-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(messageUpdate),
+    }),
+    env,
+  );
+  assert.equal(messageResponse.status, 200);
+  assert.deepEqual(await readJson(await worker.fetch(new Request("https://spendsoul.test/api/expenses"), env)), []);
+
+  const pendingKey = [...kv.records.keys()].find((key) => key.startsWith("telegram_expense_confirm:"));
+  assert.ok(pendingKey);
+  const nonce = pendingKey.replace("telegram_expense_confirm:", "");
+
+  const confirmResponse = await worker.fetch(
+    new Request("https://spendsoul.test/telegram-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query: {
+          id: "callback-1",
+          data: `expense:yes:${nonce}`,
+          from: { id: 4004, first_name: "Max" },
+          message: {
+            message_id: 11,
+            chat: { id: 4004 },
+          },
+        },
+      }),
+    }),
+    env,
+  );
+  assert.equal(confirmResponse.status, 200);
+
+  const expenses = await readJson(await worker.fetch(new Request("https://spendsoul.test/api/expenses"), env));
+  assert.equal(expenses.length, 1);
+  assert.equal(expenses[0].description_raw, "кофе");
+  assert.equal(kv.records.has(pendingKey), false);
+});
+
+test("recent learning examples preserve user-corrected taxonomy for AI prompts", () => {
+  const examples = __workerTestables.buildRecentLearningExamples([
+    {
+      id: 1,
+      description_raw: "чатгпт подписка",
+      product_name: "chatgpt",
+      category: "подписки",
+      sub_category: "ai-сервисы",
+      sub_sub_category: "chatgpt",
+      for_whom: "myself",
+    },
+  ]);
+
+  assert.deepEqual(examples, [
+    {
+      description_raw: "чатгпт подписка",
+      product_name: "chatgpt",
+      category: "подписки",
+      sub_category: "ai-сервисы",
+      sub_sub_category: "chatgpt",
+      for_whom: "myself",
+    },
+  ]);
 });

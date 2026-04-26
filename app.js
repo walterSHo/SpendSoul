@@ -45,6 +45,7 @@ const aiHintInput = document.querySelector("#ai_hint");
 const submitButton = document.querySelector("#submitButton");
 const clearLocalButton = document.querySelector("#clearLocalButton");
 const resetServerButton = document.querySelector("#resetServerButton");
+const resetServerHistoryButton = document.querySelector("#resetServerHistoryButton");
 const statusMessage = document.querySelector("#statusMessage");
 const tableBody = document.querySelector("#expensesTableBody");
 const totalAmountNode = document.querySelector("#totalAmount");
@@ -81,12 +82,17 @@ const todayTotalAmount = document.querySelector("#todayTotalAmount");
 const todayLimitStatus = document.querySelector("#todayLimitStatus");
 const todayLimitMeter = document.querySelector("#todayLimitMeter");
 const todayExpenseCount = document.querySelector("#todayExpenseCount");
+const todayIncomeAmount = document.querySelector("#todayIncomeAmount");
 const todayMonthTotal = document.querySelector("#todayMonthTotal");
+const todayBalanceAmount = document.querySelector("#todayBalanceAmount");
 const quickExpenseForm = document.querySelector("#quickExpenseForm");
 const quickEntryType = document.querySelector("#quickEntryType");
 const quickExpenseInput = document.querySelector("#quickExpenseInput");
+const quickInputHint = document.querySelector("#quickInputHint");
 const quickExpenseSubmitButton = document.querySelector("#quickExpenseSubmitButton");
 const quickExpenseStatusMessage = document.querySelector("#quickExpenseStatusMessage");
+const activityTypeFilter = document.querySelector("#activityTypeFilter");
+const activityFeed = document.querySelector("#activityFeed");
 const viewTabs = [...document.querySelectorAll(".view-tab")];
 const todayView = document.querySelector("#todayView");
 const expensesView = document.querySelector("#expensesView");
@@ -94,11 +100,16 @@ const incomesView = document.querySelector("#incomesView");
 const cryptoView = document.querySelector("#cryptoView");
 const settingsView = document.querySelector("#settingsView");
 const incomeForm = document.querySelector("#incomeForm");
+const incomeFormTitle = document.querySelector("#incomeFormTitle");
+const incomeFormCopy = document.querySelector("#incomeFormCopy");
+const incomeFormChip = document.querySelector("#incomeFormChip");
 const incomeDateInput = document.querySelector("#incomeDate");
 const incomeAmountInput = document.querySelector("#incomeAmount");
+const incomeCurrencyInput = document.querySelector("#incomeCurrency");
 const incomeSourceInput = document.querySelector("#incomeSource");
 const incomeNotesInput = document.querySelector("#incomeNotes");
 const incomeSubmitButton = document.querySelector("#incomeSubmitButton");
+const cancelIncomeEditButton = document.querySelector("#cancelIncomeEditButton");
 const incomeStatusMessage = document.querySelector("#incomeStatusMessage");
 const monthlyIncomeAmount = document.querySelector("#monthlyIncomeAmount");
 const monthlyExpenseMirror = document.querySelector("#monthlyExpenseMirror");
@@ -106,11 +117,15 @@ const monthlyBalanceAmount = document.querySelector("#monthlyBalanceAmount");
 const incomeCount = document.querySelector("#incomeCount");
 const incomesTableBody = document.querySelector("#incomesTableBody");
 const cryptoForm = document.querySelector("#cryptoForm");
+const cryptoFormTitle = document.querySelector("#cryptoFormTitle");
+const cryptoFormCopy = document.querySelector("#cryptoFormCopy");
+const cryptoFormChip = document.querySelector("#cryptoFormChip");
 const cryptoCoinInput = document.querySelector("#cryptoCoin");
 const cryptoAmountHeldInput = document.querySelector("#cryptoAmountHeld");
 const cryptoInvestedAmountInput = document.querySelector("#cryptoInvestedAmount");
 const cryptoNotesInput = document.querySelector("#cryptoNotes");
 const cryptoSubmitButton = document.querySelector("#cryptoSubmitButton");
+const cancelCryptoEditButton = document.querySelector("#cancelCryptoEditButton");
 const refreshCryptoPricesButton = document.querySelector("#refreshCryptoPricesButton");
 const cryptoStatusMessage = document.querySelector("#cryptoStatusMessage");
 const cryptoCurrentValue = document.querySelector("#cryptoCurrentValue");
@@ -121,8 +136,12 @@ const cryptoPriceStatus = document.querySelector("#cryptoPriceStatus");
 const cryptoTableBody = document.querySelector("#cryptoTableBody");
 const recurringView = document.querySelector("#recurringView");
 const recurringForm = document.querySelector("#recurringForm");
+const recurringFormTitle = document.querySelector("#recurringFormTitle");
+const recurringFormCopy = document.querySelector("#recurringFormCopy");
+const recurringFormChip = document.querySelector("#recurringFormChip");
 const recurringStartDateInput = document.querySelector("#recurringStartDate");
 const recurringAmountInput = document.querySelector("#recurringAmount");
+const recurringCurrencyInput = document.querySelector("#recurringCurrency");
 const recurringFrequencyInput = document.querySelector("#recurringFrequency");
 const recurringForWhomInput = document.querySelector("#recurringForWhom");
 const recurringDescriptionInput = document.querySelector("#recurringDescription");
@@ -130,6 +149,7 @@ const recurringCategoryInput = document.querySelector("#recurringCategory");
 const recurringSubCategoryInput = document.querySelector("#recurringSubCategory");
 const recurringNotesInput = document.querySelector("#recurringNotes");
 const recurringSubmitButton = document.querySelector("#recurringSubmitButton");
+const cancelRecurringEditButton = document.querySelector("#cancelRecurringEditButton");
 const materializeRecurringButton = document.querySelector("#materializeRecurringButton");
 const recurringStatusMessage = document.querySelector("#recurringStatusMessage");
 const recurringMonthlyAmount = document.querySelector("#recurringMonthlyAmount");
@@ -139,6 +159,9 @@ const settingsForm = document.querySelector("#settingsForm");
 const dailyLimitInput = document.querySelector("#dailyLimitInput");
 const monthlyLimitInput = document.querySelector("#monthlyLimitInput");
 const categoryCatalogInput = document.querySelector("#categoryCatalogInput");
+const categoryRenameFromInput = document.querySelector("#categoryRenameFromInput");
+const categoryRenameToInput = document.querySelector("#categoryRenameToInput");
+const categoryRenameButton = document.querySelector("#categoryRenameButton");
 const defaultCurrencyInput = document.querySelector("#defaultCurrencyInput");
 const displayCurrencyInput = document.querySelector("#displayCurrencyInput");
 const settingsSubmitButton = document.querySelector("#settingsSubmitButton");
@@ -193,6 +216,8 @@ const customSelects = new WeakMap();
 dateInput.value = new Date().toISOString().slice(0, 10);
 incomeDateInput.value = new Date().toISOString().slice(0, 10);
 recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
+incomeCurrencyInput.value = appSettings.default_currency;
+recurringCurrencyInput.value = appSettings.default_currency;
 initializeTheme();
 initializeSoulMode();
 initializeTelegramApp();
@@ -217,13 +242,20 @@ window.setTimeout(() => {
 
 form.addEventListener("submit", handleSubmit);
 quickExpenseForm?.addEventListener("submit", handleQuickExpenseSubmit);
+quickEntryType?.addEventListener("change", handleQuickEntryTypeChange);
+activityTypeFilter?.addEventListener("change", renderActivityFeed);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
 cryptoForm.addEventListener("submit", handleCryptoSubmit);
 recurringForm.addEventListener("submit", handleRecurringSubmit);
+cancelIncomeEditButton?.addEventListener("click", cancelIncomeEdit);
+cancelCryptoEditButton?.addEventListener("click", cancelCryptoEdit);
+cancelRecurringEditButton?.addEventListener("click", cancelRecurringEdit);
 settingsForm?.addEventListener("submit", handleSettingsSubmit);
 refreshExchangeRatesButton?.addEventListener("click", handleRefreshExchangeRates);
+categoryRenameButton?.addEventListener("click", handleCategoryRename);
 clearLocalButton?.addEventListener("click", handleClearLocalStorage);
 resetServerButton?.addEventListener("click", handleResetServerData);
+resetServerHistoryButton?.addEventListener("click", handleResetServerHistory);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
 materializeRecurringButton?.addEventListener("click", handleMaterializeRecurring);
 quickAddButton.addEventListener("click", handleQuickAdd);
@@ -258,6 +290,8 @@ brandTitle?.addEventListener("click", handleBrandTitleClick);
 
 [dateInput, incomeDateInput, dateFromFilter, dateToFilter, recurringStartDateInput].forEach(bindNativeDatePicker);
 initializeCustomSelects();
+handleQuickEntryTypeChange();
+updateEditorStates();
 
 function blockOfflineWrite(setter) {
   if (!isOfflineMode) {
@@ -739,6 +773,80 @@ async function handleQuickExpenseSubmit(event) {
   }
 }
 
+function handleQuickEntryTypeChange() {
+  const entryType = quickEntryType?.value || "expense";
+  const hints = {
+    expense: {
+      placeholder: "кофе 80, такси домой 240, чатгпт 800 подписка",
+      hint: "Расход: кофе 80 или такси домой 240",
+    },
+    income: {
+      placeholder: "зарплата 20000, возврат долга 500",
+      hint: "Доход: зарплата 20000 или возврат 500",
+    },
+    recurring: {
+      placeholder: "spotify 250, vpn 120, chatgpt 800",
+      hint: "Подписка: spotify 250, частота по умолчанию месяц",
+    },
+    crypto: {
+      placeholder: "btc 0.01 12000, sol 2 5000",
+      hint: "Крипта: монета количество вложено",
+    },
+  };
+  const nextHint = hints[entryType] || hints.expense;
+  if (quickExpenseInput) {
+    quickExpenseInput.placeholder = nextHint.placeholder;
+  }
+  if (quickInputHint) {
+    quickInputHint.textContent = nextHint.hint;
+  }
+}
+
+async function handleCategoryRename() {
+  const from = normalizeSearchText(categoryRenameFromInput?.value || "");
+  const to = String(categoryRenameToInput?.value || "").trim().toLowerCase();
+  if (!from || !to) {
+    setSettingsStatus("Укажите старую и новую категорию.", true);
+    return;
+  }
+
+  const changedExpenses = expenses.filter((expense) => normalizeSearchText(expense.category) === from);
+  if (!changedExpenses.length) {
+    setSettingsStatus("Таких категорий в расходах не найдено.", true);
+    return;
+  }
+
+  if (blockOfflineWrite(setSettingsStatus)) {
+    return;
+  }
+
+  categoryRenameButton.disabled = true;
+  setSettingsStatus("Обновляю категории...");
+
+  try {
+    for (const expense of changedExpenses) {
+      const savedExpense = await saveExpenseRecord({ ...expense, category: to }, "edit");
+      expenses = upsertExpense(expenses, savedExpense);
+    }
+    appSettings = sanitizeSettings({
+      ...appSettings,
+      category_catalog: [...appSettings.category_catalog.filter((category) => normalizeSearchText(category) !== from), to],
+    });
+    await saveSettings(appSettings);
+    persistSettings(appSettings);
+    persistExpenses(expenses);
+    categoryRenameFromInput.value = "";
+    categoryRenameToInput.value = "";
+    syncFilterOptions();
+    render();
+    setSettingsStatus(`Категория обновлена в ${changedExpenses.length} записях.`);
+  } catch (error) {
+    setSettingsStatus(error.message || "Не удалось обновить категории.", true);
+  } finally {
+    categoryRenameButton.disabled = false;
+  }
+}
+
 async function handleIncomeSubmit(event) {
   event.preventDefault();
 
@@ -746,7 +854,7 @@ async function handleIncomeSubmit(event) {
     id: editingIncomeId,
     date: incomeDateInput.value,
     amount: Number(incomeAmountInput.value),
-    currency: appSettings.default_currency,
+    currency: incomeCurrencyInput.value || appSettings.default_currency,
     source: incomeSourceInput.value.trim(),
     notes: incomeNotesInput.value.trim(),
   };
@@ -775,8 +883,11 @@ async function handleIncomeSubmit(event) {
     incomeForm.reset();
     editingIncomeId = null;
     incomeDateInput.value = new Date().toISOString().slice(0, 10);
-    await flashButtonSuccess(incomeSubmitButton, "Сохранено", "Сохранить доход");
-    setIncomeStatus("Доход сохранен.");
+    incomeCurrencyInput.value = appSettings.default_currency;
+    updateCustomSelect(incomeCurrencyInput);
+    updateEditorStates();
+    await flashButtonSuccess(incomeSubmitButton, "Сохранено", getIncomeSubmitLabel());
+    setIncomeStatus(payload.id ? "Доход обновлен." : "Доход сохранен.");
   } catch (error) {
     setIncomeStatus(error.message || "Не удалось сохранить доход.", true);
   } finally {
@@ -812,7 +923,7 @@ async function handleSettingsSubmit(event) {
     appSettings = await saveSettings(nextSettings);
     persistSettings(appSettings);
     renderSettingsView();
-    await flashButtonSuccess(settingsSubmitButton, "Сохранено", "Сохранить настройки");
+    await flashButtonSuccess(settingsSubmitButton, "Сохранено", "Сохранить лимиты");
     setSettingsStatus("Настройки сохранены.");
   } catch (error) {
     appSettings = nextSettings;
@@ -887,10 +998,11 @@ async function handleCryptoSubmit(event) {
     cryptoForm.reset();
     editingCryptoAssetId = null;
     updateCustomSelect(cryptoCoinInput);
+    updateEditorStates();
     renderCryptoView();
     await refreshCryptoPrices();
-    await flashButtonSuccess(cryptoSubmitButton, "Сохранено", "Сохранить позицию");
-    setCryptoStatus("Позиция сохранена.");
+    await flashButtonSuccess(cryptoSubmitButton, "Сохранено", getCryptoSubmitLabel());
+    setCryptoStatus(payload.id ? "Позиция обновлена." : "Позиция сохранена.");
   } catch (error) {
     setCryptoStatus(error.message || "Не удалось сохранить позицию.", true);
   } finally {
@@ -905,7 +1017,7 @@ async function handleRecurringSubmit(event) {
     id: editingRecurringExpenseId,
     start_date: recurringStartDateInput.value,
     amount: Number(recurringAmountInput.value),
-    currency: appSettings.default_currency,
+    currency: recurringCurrencyInput.value || appSettings.default_currency,
     description_raw: recurringDescriptionInput.value.trim(),
     category: recurringCategoryInput.value.trim() || "подписки",
     sub_category: recurringSubCategoryInput.value.trim() || "подписки",
@@ -936,12 +1048,15 @@ async function handleRecurringSubmit(event) {
     recurringForm.reset();
     editingRecurringExpenseId = null;
     recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
+    recurringCurrencyInput.value = appSettings.default_currency;
     updateCustomSelect(recurringFrequencyInput);
     updateCustomSelect(recurringForWhomInput);
+    updateCustomSelect(recurringCurrencyInput);
+    updateEditorStates();
     renderRecurringView();
     pulseNodes(recurringMonthlyAmount, recurringCount);
-    await flashButtonSuccess(recurringSubmitButton, "Сохранено", "Сохранить подписку");
-    setRecurringStatus("Подписка сохранена.");
+    await flashButtonSuccess(recurringSubmitButton, "Сохранено", getRecurringSubmitLabel());
+    setRecurringStatus(payload.id ? "Подписка обновлена." : "Подписка сохранена.");
   } catch (error) {
     setRecurringStatus(error.message || "Не удалось сохранить подписку.", true);
   } finally {
@@ -979,22 +1094,106 @@ async function handleMaterializeRecurring() {
   }
 }
 
+function cancelIncomeEdit() {
+  editingIncomeId = null;
+  incomeForm.reset();
+  incomeDateInput.value = new Date().toISOString().slice(0, 10);
+  incomeCurrencyInput.value = appSettings.default_currency;
+  updateCustomSelect(incomeCurrencyInput);
+  updateEditorStates();
+  setIncomeStatus("Редактирование дохода отменено.");
+}
+
+function cancelCryptoEdit() {
+  editingCryptoAssetId = null;
+  cryptoForm.reset();
+  updateCustomSelect(cryptoCoinInput);
+  updateEditorStates();
+  setCryptoStatus("Редактирование позиции отменено.");
+}
+
+function cancelRecurringEdit() {
+  editingRecurringExpenseId = null;
+  recurringForm.reset();
+  recurringStartDateInput.value = new Date().toISOString().slice(0, 10);
+  recurringCurrencyInput.value = appSettings.default_currency;
+  updateCustomSelect(recurringFrequencyInput);
+  updateCustomSelect(recurringForWhomInput);
+  updateCustomSelect(recurringCurrencyInput);
+  updateEditorStates();
+  setRecurringStatus("Редактирование подписки отменено.");
+}
+
+function updateEditorStates() {
+  const incomeEditing = Boolean(editingIncomeId);
+  incomeForm?.classList.toggle("editing-record", incomeEditing);
+  if (incomeFormTitle) {
+    incomeFormTitle.textContent = incomeEditing ? "Редактирование дохода" : "Новый доход";
+  }
+  if (incomeFormCopy) {
+    incomeFormCopy.textContent = incomeEditing
+      ? "Проверьте дату, сумму, валюту и источник. Сохранение обновит выбранную запись без дубля."
+      : "Записывайте зарплату, возвраты, подарки и любые поступления отдельно от расходов.";
+  }
+  if (incomeFormChip) {
+    incomeFormChip.textContent = incomeEditing ? `Правка #${editingIncomeId}` : "Плюс к балансу";
+  }
+  if (incomeSubmitButton && !incomeSubmitButton.disabled) {
+    incomeSubmitButton.textContent = getIncomeSubmitLabel();
+  }
+  cancelIncomeEditButton?.classList.toggle("hidden", !incomeEditing);
+
+  const cryptoEditing = Boolean(editingCryptoAssetId);
+  cryptoForm?.classList.toggle("editing-record", cryptoEditing);
+  if (cryptoFormTitle) {
+    cryptoFormTitle.textContent = cryptoEditing ? "Редактирование позиции" : "Новая позиция";
+  }
+  if (cryptoFormCopy) {
+    cryptoFormCopy.textContent = cryptoEditing
+      ? "Обновите количество, вложенную сумму или заметку. Цена подтянется заново после сохранения."
+      : "Укажите монету, сколько держите и сколько всего вложили. Текущую стоимость посчитаем по live-цене.";
+  }
+  if (cryptoFormChip) {
+    cryptoFormChip.textContent = cryptoEditing ? `Правка #${editingCryptoAssetId}` : "Live price";
+  }
+  if (cryptoSubmitButton && !cryptoSubmitButton.disabled) {
+    cryptoSubmitButton.textContent = getCryptoSubmitLabel();
+  }
+  cancelCryptoEditButton?.classList.toggle("hidden", !cryptoEditing);
+
+  const recurringEditing = Boolean(editingRecurringExpenseId);
+  recurringForm?.classList.toggle("editing-record", recurringEditing);
+  if (recurringFormTitle) {
+    recurringFormTitle.textContent = recurringEditing ? "Редактирование подписки" : "Подписка";
+  }
+  if (recurringFormCopy) {
+    recurringFormCopy.textContent = recurringEditing
+      ? "Измените сумму, валюту, период или статус сервиса. Сохранение обновит текущую подписку."
+      : "Сохраняйте сервисы и регулярные платежи, чтобы видеть, что можно отключить для экономии.";
+  }
+  if (recurringFormChip) {
+    recurringFormChip.textContent = recurringEditing ? `Правка #${editingRecurringExpenseId}` : "Экономия";
+  }
+  if (recurringSubmitButton && !recurringSubmitButton.disabled) {
+    recurringSubmitButton.textContent = getRecurringSubmitLabel();
+  }
+  cancelRecurringEditButton?.classList.toggle("hidden", !recurringEditing);
+}
+
+function getIncomeSubmitLabel() {
+  return editingIncomeId ? "Обновить доход" : "Сохранить доход";
+}
+
+function getCryptoSubmitLabel() {
+  return editingCryptoAssetId ? "Обновить позицию" : "Сохранить позицию";
+}
+
+function getRecurringSubmitLabel() {
+  return editingRecurringExpenseId ? "Обновить подписку" : "Сохранить подписку";
+}
+
 function handleClearLocalStorage() {
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(INCOME_STORAGE_KEY);
-  localStorage.removeItem(CRYPTO_STORAGE_KEY);
-  localStorage.removeItem(RECURRING_STORAGE_KEY);
-  localStorage.removeItem(SETTINGS_STORAGE_KEY);
-  expenses = [];
-  incomes = [];
-  cryptoAssets = [];
-  recurringExpenses = [];
-  appSettings = sanitizeSettings({});
-  cryptoPrices = {};
-  visibleWeekStart = getStartOfWeek(new Date());
-  visibleMonthDate = getStartOfMonth(new Date());
-  syncFilterOptions();
-  render();
+  clearLocalHistory({ resetSettings: true });
   setStatus("Локальный кеш очищен.");
   setIncomeStatus("Локальный кеш очищен.");
   setCryptoStatus("Локальный кеш очищен.");
@@ -1002,32 +1201,61 @@ function handleClearLocalStorage() {
   setSettingsStatus("Локальный кеш очищен.");
 }
 
+function clearLocalHistory({ resetSettings = false } = {}) {
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(INCOME_STORAGE_KEY);
+  localStorage.removeItem(CRYPTO_STORAGE_KEY);
+  localStorage.removeItem(RECURRING_STORAGE_KEY);
+  expenses = [];
+  incomes = [];
+  cryptoAssets = [];
+  recurringExpenses = [];
+  if (resetSettings) {
+    localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    appSettings = sanitizeSettings({});
+  }
+  cryptoPrices = {};
+  visibleWeekStart = getStartOfWeek(new Date());
+  visibleMonthDate = getStartOfMonth(new Date());
+  syncFilterOptions();
+  render();
+}
+
 async function handleResetServerData() {
-  if (blockOfflineWrite(setStatus)) {
+  return handleResetServerHistory();
+}
+
+async function handleResetServerHistory() {
+  if (blockOfflineWrite(setSettingsStatus)) {
     return;
   }
 
-  if (!confirm("Удалить все ваши расходы, доходы, крипто позиции и подписки на сервере?")) {
+  if (!confirm("Очистить вашу историю на сервере? Настройки и категории останутся, но расходы, доходы, активы и подписки будут удалены.")) {
     return;
   }
 
-  if (resetServerButton) {
-    resetServerButton.disabled = true;
-  }
-  setSyncState("loading", "Сбрасываю серверные данные...");
+  [resetServerButton, resetServerHistoryButton].filter(Boolean).forEach((button) => {
+    button.disabled = true;
+  });
+  setSyncState("loading", "Очищаю вашу серверную историю...");
+  setSettingsStatus("Очищаю историю на сервере...");
 
   try {
-    await resetServerData();
-    handleClearLocalStorage();
-    setSyncState("online", "Серверные данные очищены");
-    setStatus("Серверные данные очищены.");
+    await resetServerHistory();
+    clearLocalHistory({ resetSettings: false });
+    setSyncState("online", "История на сервере очищена");
+    setStatus("История на сервере очищена.");
+    setIncomeStatus("История на сервере очищена.");
+    setCryptoStatus("История на сервере очищена.");
+    setRecurringStatus("История на сервере очищена.");
+    setSettingsStatus("История очищена. Настройки и категории сохранены.");
   } catch (error) {
-    setSyncState("offline", "Сброс сервера не выполнен");
-    setStatus(error.message || "Не удалось сбросить серверные данные.", true);
+    setSyncState("offline", "История не очищена");
+    setSettingsStatus(error.message || "Не удалось очистить историю на сервере.", true);
   } finally {
-    if (resetServerButton) {
-      resetServerButton.disabled = false;
-    }
+    [resetServerButton, resetServerHistoryButton].filter(Boolean).forEach((button) => {
+      button.disabled = false;
+    });
   }
 }
 
@@ -1249,8 +1477,11 @@ function handleIncomeTableClick(event) {
   incomeDateInput.value = income.date;
   editingIncomeId = income.id;
   incomeAmountInput.value = String(income.amount);
+  incomeCurrencyInput.value = normalizeCurrency(income.currency, appSettings.default_currency);
   incomeSourceInput.value = income.source;
   incomeNotesInput.value = income.notes;
+  updateCustomSelect(incomeCurrencyInput);
+  updateEditorStates();
   incomeSourceInput.focus();
   setIncomeStatus("Доход загружен в форму. Сохранение обновит запись.");
 }
@@ -1279,6 +1510,7 @@ function handleCryptoTableClick(event) {
   cryptoInvestedAmountInput.value = String(asset.invested_amount);
   cryptoNotesInput.value = asset.notes;
   updateCustomSelect(cryptoCoinInput);
+  updateEditorStates();
   cryptoAmountHeldInput.focus();
   setCryptoStatus("Позиция загружена в форму. Сохранение обновит запись.");
 }
@@ -1310,6 +1542,7 @@ function handleRecurringTableClick(event) {
   recurringStartDateInput.value = recurringExpense.start_date;
   editingRecurringExpenseId = recurringExpense.id;
   recurringAmountInput.value = String(recurringExpense.amount);
+  recurringCurrencyInput.value = normalizeCurrency(recurringExpense.currency, appSettings.default_currency);
   recurringFrequencyInput.value = recurringExpense.frequency;
   recurringForWhomInput.value = recurringExpense.for_whom;
   recurringDescriptionInput.value = recurringExpense.description_raw;
@@ -1318,6 +1551,8 @@ function handleRecurringTableClick(event) {
   recurringNotesInput.value = recurringExpense.notes;
   updateCustomSelect(recurringFrequencyInput);
   updateCustomSelect(recurringForWhomInput);
+  updateCustomSelect(recurringCurrencyInput);
+  updateEditorStates();
   recurringDescriptionInput.focus();
   setRecurringStatus("Подписка загружена в форму. Сохранение обновит запись.");
 }
@@ -1524,6 +1759,22 @@ async function apiFetch(path, options = {}) {
   }
 
   return response;
+}
+
+async function fetchHealth() {
+  const response = await apiFetch("/api/health");
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Не удалось проверить версию API.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "API недоступен.");
+  }
+
+  return data;
 }
 
 async function createBotLoginToken() {
@@ -1903,6 +2154,25 @@ async function resetServerData() {
   return data;
 }
 
+async function resetServerHistory() {
+  const response = await apiFetch("/api/reset-history", {
+    method: "POST",
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Сервер вернул некорректный ответ.");
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Не удалось очистить историю на сервере.");
+  }
+
+  return data;
+}
+
 async function normalizeExpense(payload) {
   const response = await apiFetch("/api/normalize-expense", {
     method: "POST",
@@ -2064,8 +2334,9 @@ async function syncExpensesOnLoad() {
   setCryptoStatus("Загружаю крипто портфель...");
   setRecurringStatus("Загружаю подписки...");
 
-  const [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult, settingsSyncResult, exchangeRateSyncResult] =
+  const [healthSyncResult, expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult, settingsSyncResult, exchangeRateSyncResult] =
     await Promise.allSettled([
+    fetchHealth(),
     fetchExpenses(),
     fetchIncomes(),
     fetchCryptoAssets(),
@@ -2076,6 +2347,7 @@ async function syncExpensesOnLoad() {
   const syncResults = [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult];
   const failedSyncCount = syncResults.filter((result) => result.status === "rejected").length;
   isOfflineMode = failedSyncCount > 0;
+  const apiVersionLabel = healthSyncResult.status === "fulfilled" ? ` · API ${healthSyncResult.value.version || "online"}` : "";
 
   if (expenseSyncResult.status === "fulfilled") {
     expenses = expenseSyncResult.value;
@@ -2127,7 +2399,7 @@ async function syncExpensesOnLoad() {
   isInitialSyncing = false;
   syncFilterOptions();
   render();
-  setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Локальный кеш" : "Сервер подключен");
+  setSyncState(isOfflineMode ? "offline" : "online", isOfflineMode ? "Локальный кеш" : `Сервер подключен${apiVersionLabel}`);
   suppressStatusToasts = false;
   refreshCryptoPrices();
 }
@@ -2413,6 +2685,7 @@ function render() {
   filteredExpenses = sortExpenses(applyFilters(expenses));
   renderTodayView();
   renderLatestExpenses();
+  renderActivityFeed();
   renderSummary();
   renderIncomeView();
   renderCryptoView();
@@ -2421,24 +2694,53 @@ function render() {
   renderTable();
   renderCharts();
   renderSortState();
+  syncEditorCurrencyDefaults();
+  updateEditorStates();
+}
+
+function syncEditorCurrencyDefaults() {
+  if (!editingIncomeId && incomeCurrencyInput && document.activeElement !== incomeCurrencyInput) {
+    incomeCurrencyInput.value = appSettings.default_currency;
+    updateCustomSelect(incomeCurrencyInput);
+  }
+  if (!editingRecurringExpenseId && recurringCurrencyInput && document.activeElement !== recurringCurrencyInput) {
+    recurringCurrencyInput.value = appSettings.default_currency;
+    updateCustomSelect(recurringCurrencyInput);
+  }
 }
 
 function renderTodayView() {
   const today = new Date().toISOString().slice(0, 10);
   const todayExpenses = expenses.filter((expense) => expense.date === today);
-  const todayTotal = todayExpenses.reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
+  const todayIncomes = incomes.filter((income) => income.date === today);
+  const todayExpenseTotal = todayExpenses.reduce((sum, expense) => sum + getExpenseAmountInCurrency(expense), 0);
+  const todayIncomeTotal = todayIncomes.reduce((sum, income) => sum + getIncomeAmountInCurrency(income), 0);
+  const todayBalance = todayIncomeTotal - todayExpenseTotal;
+  const todayOperationCount = todayExpenses.length + todayIncomes.length;
   const monthlySummary = buildMonthlySummary(expenses, visibleMonthDate);
+  const monthlyIncomeSummary = buildMonthlyIncomeSummary(incomes, visibleMonthDate);
+  const monthlyBalance = monthlyIncomeSummary.total - monthlySummary.total;
   const dailyLimit = Number(appSettings.daily_limit) || 0;
-  const dailyRatio = dailyLimit ? Math.min(todayTotal / dailyLimit, 1) : 0;
+  const dailyRatio = dailyLimit ? Math.min(todayExpenseTotal / dailyLimit, 1) : 0;
 
   if (todayTotalAmount) {
-    todayTotalAmount.textContent = formatMoneyWithEquivalent(todayTotal, appSettings.default_currency);
+    todayTotalAmount.textContent = formatMoneyWithEquivalent(todayBalance, appSettings.default_currency);
+    todayTotalAmount.dataset.state = todayBalance >= 0 ? "positive" : "negative";
   }
   if (todayExpenseCount) {
-    todayExpenseCount.textContent = String(todayExpenses.length);
+    todayExpenseCount.textContent = String(todayOperationCount);
+  }
+  if (todayIncomeAmount) {
+    todayIncomeAmount.textContent = formatMoneyWithEquivalent(todayIncomeTotal, appSettings.default_currency);
+    todayIncomeAmount.dataset.state = todayIncomeTotal > 0 ? "positive" : "neutral";
   }
   if (todayMonthTotal) {
-    todayMonthTotal.textContent = monthlySummary.total.toFixed(2);
+    todayMonthTotal.textContent = formatMoneyWithEquivalent(todayExpenseTotal, appSettings.default_currency);
+    todayMonthTotal.dataset.state = todayExpenseTotal > 0 ? "negative" : "neutral";
+  }
+  if (todayBalanceAmount) {
+    todayBalanceAmount.textContent = formatMoneyWithEquivalent(monthlyBalance, appSettings.default_currency);
+    todayBalanceAmount.dataset.state = monthlyBalance >= 0 ? "positive" : "negative";
   }
   if (todayLimitMeter) {
     todayLimitMeter.style.width = `${Math.round(dailyRatio * 100)}%`;
@@ -2446,13 +2748,19 @@ function renderTodayView() {
   }
   if (todayLimitStatus) {
     if (!dailyLimit) {
-      todayLimitStatus.textContent = "Дневной лимит не задан";
+      todayLimitStatus.textContent =
+        todayIncomeTotal > 0
+          ? `Сегодня: доход ${formatMoneyWithEquivalent(todayIncomeTotal, appSettings.default_currency)}, расход ${formatMoneyWithEquivalent(
+              todayExpenseTotal,
+              appSettings.default_currency,
+            )}`
+          : "Дневной лимит расходов не задан";
     } else {
-      const left = dailyLimit - todayTotal;
+      const left = dailyLimit - todayExpenseTotal;
       todayLimitStatus.textContent =
         left >= 0
-          ? `Осталось ${formatMoney(left)} из ${formatMoney(dailyLimit)}`
-          : `Лимит превышен на ${formatMoney(Math.abs(left))}`;
+          ? `По расходам осталось ${formatMoney(left)} из ${formatMoney(dailyLimit)}`
+          : `Лимит расходов превышен на ${formatMoney(Math.abs(left))}`;
     }
   }
 }
@@ -2468,7 +2776,7 @@ function renderLatestExpenses() {
     latestExpenseCountLabel.textContent = "событий";
   }
   if (latestExpenseHint) {
-    latestExpenseHint.textContent = latestItems.length ? `Последние ${latestItems.length} справа` : "Добавьте первую операцию";
+    latestExpenseHint.textContent = latestItems.length ? `Последние ${latestItems.length} операций` : "Добавьте первую операцию";
   }
 
   if (!latestItems.length) {
@@ -2495,6 +2803,7 @@ function renderLatestExpenses() {
 function buildLatestActivityItems() {
   return [
     ...expenses.map((expense) => ({
+      type: "expense",
       date: expense.date,
       id: expense.id,
       title: getExpenseShortTitle(expense),
@@ -2502,6 +2811,7 @@ function buildLatestActivityItems() {
       amountText: `− ${formatMoneyWithEquivalent(expense.amount, expense.currency)}`,
     })),
     ...incomes.map((income) => ({
+      type: "income",
       date: income.date,
       id: income.id,
       title: toDisplayCase(income.source || "Доход"),
@@ -2509,6 +2819,7 @@ function buildLatestActivityItems() {
       amountText: `+ ${formatMoneyWithEquivalent(income.amount, income.currency)}`,
     })),
     ...cryptoAssets.map((asset) => ({
+      type: "crypto",
       date: asset.updated_at || "",
       id: asset.id,
       title: `${asset.symbol} · ${asset.name}`,
@@ -2516,6 +2827,7 @@ function buildLatestActivityItems() {
       amountText: formatMoneyWithEquivalent(asset.invested_amount, asset.currency),
     })),
     ...recurringExpenses.map((item) => ({
+      type: "recurring",
       date: item.start_date,
       id: item.id,
       title: toDisplayCase(item.description_raw || "Подписка"),
@@ -2531,6 +2843,31 @@ function buildLatestActivityItems() {
 
     return (Number(right.id) || 0) - (Number(left.id) || 0);
   });
+}
+
+function renderActivityFeed() {
+  if (!activityFeed) {
+    return;
+  }
+
+  const filter = activityTypeFilter?.value || "all";
+  const items = buildLatestActivityItems().filter((item) => filter === "all" || item.type === filter).slice(0, 12);
+  if (!items.length) {
+    activityFeed.innerHTML = '<p class="latest-empty">Операций пока нет.</p>';
+    return;
+  }
+
+  activityFeed.innerHTML = items
+    .map(
+      (item) => `
+        <article class="activity-item activity-item-${escapeHtml(item.type)}">
+          <span>${escapeHtml(item.meta)}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <b>${escapeHtml(item.amountText)}</b>
+        </article>
+      `,
+    )
+    .join("");
 }
 
 function renderSummary() {
@@ -3701,17 +4038,17 @@ function setLoading(isLoading) {
 
 function setIncomeLoading(isLoading) {
   incomeSubmitButton.disabled = isLoading;
-  incomeSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить доход";
+  incomeSubmitButton.textContent = isLoading ? "Сохраняю..." : getIncomeSubmitLabel();
 }
 
 function setCryptoLoading(isLoading) {
   cryptoSubmitButton.disabled = isLoading;
-  cryptoSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить позицию";
+  cryptoSubmitButton.textContent = isLoading ? "Сохраняю..." : getCryptoSubmitLabel();
 }
 
 function setRecurringLoading(isLoading) {
   recurringSubmitButton.disabled = isLoading;
-  recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить подписку";
+  recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : getRecurringSubmitLabel();
 }
 
 function celebrateExpenseSave() {
@@ -3897,6 +4234,7 @@ async function handleConfirmSave() {
     const currentMode = pendingMode;
     const savedExpense = await saveExpenseRecord(pendingExpense, currentMode);
     expenses = upsertExpense(expenses, savedExpense);
+    await rememberExpenseTaxonomy(savedExpense);
     const createdSubscription = currentMode === "create" ? await maybeCreateSubscriptionFromExpense(savedExpense) : null;
     visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
     visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
@@ -3963,9 +4301,30 @@ function closeConfirmDialog() {
   confirmCopy.textContent = "Добавляю трату в категории ниже. Проверь данные и подтверди сохранение.";
 }
 
+async function rememberExpenseTaxonomy(expense) {
+  const learnedCategory = normalizeSearchText(expense?.category || "");
+  if (!learnedCategory || learnedCategory === "other" || appSettings.category_catalog.includes(learnedCategory)) {
+    return;
+  }
+
+  appSettings = sanitizeSettings({
+    ...appSettings,
+    category_catalog: [...appSettings.category_catalog, learnedCategory],
+  });
+  persistSettings(appSettings);
+
+  if (!isOfflineMode && hasTelegramAuth()) {
+    try {
+      appSettings = await saveSettings(appSettings);
+      persistSettings(appSettings);
+    } catch {}
+  }
+}
+
 function renderConfirmPreview(expense) {
   const compactFields = `
     ${renderConfirmField("Итого", "amount", String(expense.amount), { type: "number", step: "0.01", min: "0", suffix: expense.currency })}
+    ${renderConfirmField("Валюта", "currency", expense.currency)}
     ${renderConfirmField("Товар", "product_name", expense.product_name)}
     ${renderConfirmField("Категория", "category", expense.category)}
     ${renderConfirmField("Для кого", "for_whom", expense.for_whom, { type: "select" })}
@@ -3974,11 +4333,13 @@ function renderConfirmPreview(expense) {
   const editorFields = `
     ${renderConfirmField("Дата", "date", expense.date, { type: "date" })}
     ${renderConfirmField("Итого", "amount", String(expense.amount), { type: "number", step: "0.01", min: "0", suffix: expense.currency })}
+    ${renderConfirmField("Валюта", "currency", expense.currency, { type: "select" })}
     ${renderConfirmField("Количество", "quantity", String(expense.quantity), { type: "number", step: "1", min: "1" })}
     ${renderConfirmField("Товар", "product_name", expense.product_name)}
     ${renderConfirmField("Для кого", "for_whom", expense.for_whom, { type: "select" })}
     ${renderConfirmField("Категория", "category", expense.category)}
     ${renderConfirmField("Подкатегория", "sub_category", expense.sub_category)}
+    ${renderConfirmField("Детализация", "sub_sub_category", expense.sub_sub_category)}
     ${renderConfirmField("Описание", "description_raw", expense.description_raw, { type: "textarea", wide: true, rows: "3" })}
     ${renderConfirmField("Заметки", "notes", expense.notes, { type: "textarea", wide: true, rows: "2", emptyText: "—" })}
   `;
@@ -4058,7 +4419,7 @@ function renderConfirmField(label, name, value, options = {}) {
       <label class="confirm-item confirm-item-editable${wideClass}">
         <span>${escapeHtml(label)}</span>
         <select data-confirm-field="${escapeHtml(name)}">
-          ${renderForWhomOptions(safeValue)}
+          ${name === "currency" ? renderCurrencyOptions(safeValue) : renderForWhomOptions(safeValue)}
         </select>
       </label>
     `;
@@ -4105,6 +4466,13 @@ function renderForWhomOptions(selectedValue) {
     .join("");
 }
 
+function renderCurrencyOptions(selectedValue) {
+  const selectedCurrency = normalizeCurrency(selectedValue, appSettings.default_currency);
+  return [...SUPPORTED_CURRENCIES]
+    .map((value) => `<option value="${escapeHtml(value)}"${value === selectedCurrency ? " selected" : ""}>${escapeHtml(CURRENCY_LABELS[value] || value)}</option>`)
+    .join("");
+}
+
 function readConfirmEditorValue() {
   const getField = (name) => confirmPreview.querySelector(`[data-confirm-field="${name}"]`);
 
@@ -4116,11 +4484,13 @@ function readConfirmEditorValue() {
     ...pendingExpense,
     date: getField("date")?.value || pendingExpense.date,
     amount: Number(getField("amount")?.value ?? pendingExpense.amount),
+    currency: getField("currency")?.value || pendingExpense.currency,
     quantity: Number(getField("quantity")?.value ?? pendingExpense.quantity),
     product_name: getField("product_name")?.value || pendingExpense.product_name,
     for_whom: getField("for_whom")?.value || pendingExpense.for_whom,
     category: getField("category")?.value || pendingExpense.category,
     sub_category: getField("sub_category")?.value || pendingExpense.sub_category,
+    sub_sub_category: getField("sub_sub_category")?.value || pendingExpense.sub_sub_category,
     description_raw: getField("description_raw")?.value || pendingExpense.description_raw,
     notes: getField("notes")?.value || pendingExpense.notes,
   });

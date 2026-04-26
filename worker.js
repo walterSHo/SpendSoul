@@ -17,8 +17,10 @@ const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Telegram-Init-Data,X-Telegram-Auth-Data",
 };
 const BOT_LOGIN_PREFIX = "bot_login:";
+const TELEGRAM_EXPENSE_CONFIRM_PREFIX = "telegram_expense_confirm:";
 const MATERIALIZED_RECURRING_PREFIX = "materialized_recurring:";
 const BOT_LOGIN_TTL_SECONDS = 300;
+const TELEGRAM_EXPENSE_CONFIRM_TTL_SECONDS = 900;
 const DEFAULT_SITE_URL = "https://waltersho.github.io/SpendSoul/";
 const TELEGRAM_BOT_USERNAME = "spendsoul_bot";
 
@@ -75,6 +77,14 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/settings") {
         const settings = await loadSettings(env, authContext);
         return jsonResponse(settings);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/health") {
+        return jsonResponse({
+          ok: true,
+          version: "2026-04-26.1",
+          features: ["settings", "exchange-rates", "telegram-text", "telegram-voice", "multi-currency"],
+        });
       }
 
       if (request.method === "GET" && url.pathname === "/api/crypto-prices") {
@@ -203,6 +213,11 @@ export default {
         return jsonResponse({ ok: true });
       }
 
+      if (request.method === "POST" && url.pathname === "/api/reset-history") {
+        await resetHistoryData(env, authContext);
+        return jsonResponse({ ok: true });
+      }
+
       return jsonResponse({ error: "Not found" }, 404);
     } catch (error) {
       const status = getErrorStatus(error);
@@ -238,7 +253,7 @@ function getErrorStatus(error) {
 }
 
 function isPublicApiPath(pathname) {
-  return pathname === "/api/bot-login-token" || pathname === "/api/bot-login-status";
+  return pathname === "/api/bot-login-token" || pathname === "/api/bot-login-status" || pathname === "/api/health";
 }
 
 async function getAuthContext(request, env) {
@@ -421,6 +436,11 @@ async function getBotLoginStatus(env, url) {
 }
 
 async function handleTelegramWebhook(update, env) {
+  if (update?.callback_query) {
+    await handleTelegramCallbackQuery(update.callback_query, env);
+    return;
+  }
+
   const message = update?.message;
   const text = String(message?.text || "");
   const from = message?.from;
@@ -507,14 +527,157 @@ async function handleTelegramExpenseMessage(env, chatId, from, text) {
   const settings = await loadSettings(env, authContext);
   const normalizedExpense = await normalizeExpenseWithOpenAI(payload, nextId, env, existingExpenses, settings);
   const sanitizedExpense = sanitizeExpense(normalizedExpense, nextId, payload);
-  await saveExpense(env, authContext, sanitizedExpense);
+  const nonce = await saveTelegramPendingExpense(env, authContext, chatId, sanitizedExpense);
 
   await sendTelegramMessage(
     env,
     chatId,
-    `Записал: ${sanitizedExpense.product_name || sanitizedExpense.description_raw} — ${sanitizedExpense.amount.toFixed(2)} ${sanitizedExpense.currency}.`,
+    buildTelegramExpenseConfirmationText(sanitizedExpense),
+    buildTelegramExpenseConfirmationMarkup(nonce),
+  );
+}
+
+async function handleTelegramCallbackQuery(callbackQuery, env) {
+  const data = parseTelegramExpenseCallbackData(callbackQuery?.data);
+  if (!data) {
+    await answerTelegramCallback(env, callbackQuery?.id, "Кнопка устарела.");
+    return;
+  }
+
+  const chatId = callbackQuery?.message?.chat?.id;
+  const messageId = callbackQuery?.message?.message_id;
+  const from = callbackQuery?.from;
+  if (!chatId || !from?.id) {
+    await answerTelegramCallback(env, callbackQuery?.id, "Не удалось определить чат.");
+    return;
+  }
+
+  const pending = await loadTelegramPendingExpense(env, data.nonce);
+  if (!pending || String(pending.authContext?.userId || "") !== String(from.id)) {
+    await answerTelegramCallback(env, callbackQuery?.id, "Подтверждение устарело.");
+    await editTelegramMessage(env, chatId, messageId, "Эта черновая трата уже устарела. Отправьте расход заново.");
+    return;
+  }
+
+  if (data.action === "cancel") {
+    await deleteTelegramPendingExpense(env, data.nonce);
+    await answerTelegramCallback(env, callbackQuery.id, "Отменено.");
+    await editTelegramMessage(env, chatId, messageId, "Ок, не сохраняю эту трату.");
+    return;
+  }
+
+  if (data.action === "edit") {
+    await deleteTelegramPendingExpense(env, data.nonce);
+    await answerTelegramCallback(env, callbackQuery.id, "Отправьте исправленный текст.");
+    await editTelegramMessage(
+      env,
+      chatId,
+      messageId,
+      "Не сохраняю черновик. Отправьте исправленный расход новым сообщением или откройте SpendSoul.",
+      buildTelegramAppReplyMarkup(env),
+    );
+    return;
+  }
+
+  const expense = await prepareConfirmedTelegramExpense(env, pending.authContext, pending.expense);
+  await saveExpense(env, pending.authContext, expense);
+  await deleteTelegramPendingExpense(env, data.nonce);
+  await answerTelegramCallback(env, callbackQuery.id, "Сохранено.");
+  await editTelegramMessage(
+    env,
+    chatId,
+    messageId,
+    `Сохранил: ${expense.product_name || expense.description_raw} — ${expense.amount.toFixed(2)} ${expense.currency}.`,
     buildTelegramAppReplyMarkup(env),
   );
+}
+
+async function prepareConfirmedTelegramExpense(env, authContext, expense) {
+  const existingExpenses = await loadExpenses(env, authContext);
+  const idExists = existingExpenses.some((item) => Number(item.id) === Number(expense.id));
+  if (!idExists) {
+    return sanitizeExpense(expense, Number(expense.id), expense);
+  }
+
+  const nextId = await getNextExpenseId(env, authContext);
+  return sanitizeExpense({ ...expense, id: nextId }, nextId, expense);
+}
+
+async function saveTelegramPendingExpense(env, authContext, chatId, expense) {
+  if (!env.EXPENSES_KV) {
+    throw new ConfigurationError("EXPENSES_KV is not configured.");
+  }
+
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  await env.EXPENSES_KV.put(
+    getTelegramPendingExpenseKey(nonce),
+    JSON.stringify({
+      authContext,
+      chatId,
+      expense,
+      created_at: Math.floor(Date.now() / 1000),
+    }),
+    { expirationTtl: TELEGRAM_EXPENSE_CONFIRM_TTL_SECONDS },
+  );
+  return nonce;
+}
+
+async function loadTelegramPendingExpense(env, nonce) {
+  if (!env.EXPENSES_KV) {
+    return null;
+  }
+
+  const raw = await env.EXPENSES_KV.get(getTelegramPendingExpenseKey(nonce));
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function deleteTelegramPendingExpense(env, nonce) {
+  await env.EXPENSES_KV?.delete(getTelegramPendingExpenseKey(nonce));
+}
+
+function buildTelegramExpenseConfirmationText(expense) {
+  return [
+    `Понял: ${expense.product_name || expense.description_raw} — ${expense.amount.toFixed(2)} ${expense.currency}.`,
+    `Категория: ${expense.category} / ${expense.sub_category}.`,
+    `Для кого: ${formatForWhomDecisionLabel(expense.for_whom)}.`,
+    "Сохранить?",
+  ].join("\n");
+}
+
+function buildTelegramExpenseConfirmationMarkup(nonce) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Да", callback_data: `expense:yes:${nonce}` },
+        { text: "Изменить", callback_data: `expense:edit:${nonce}` },
+        { text: "Отмена", callback_data: `expense:cancel:${nonce}` },
+      ],
+    ],
+  };
+}
+
+function parseTelegramExpenseCallbackData(value) {
+  const match = String(value || "").match(/^expense:(yes|edit|cancel):([a-f0-9]{32})$/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    action: match[1].toLowerCase(),
+    nonce: match[2].toLowerCase(),
+  };
+}
+
+function getTelegramPendingExpenseKey(nonce) {
+  return `${TELEGRAM_EXPENSE_CONFIRM_PREFIX}${nonce}`;
 }
 
 function parseQuickExpenseText(value) {
@@ -671,6 +834,48 @@ async function sendTelegramMessage(env, chatId, text, replyMarkup = null) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+  });
+}
+
+async function editTelegramMessage(env, chatId, messageId, text, replyMarkup = null) {
+  if (!env.TELEGRAM_BOT_TOKEN || !messageId) {
+    return;
+  }
+
+  const body = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    disable_web_page_preview: true,
+  };
+
+  if (replyMarkup) {
+    body.reply_markup = replyMarkup;
+  }
+
+  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function answerTelegramCallback(env, callbackQueryId, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !callbackQueryId) {
+    return;
+  }
+
+  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text,
+    }),
   });
 }
 
@@ -1076,7 +1281,7 @@ function buildSystemPrompt() {
     "Use exactly these fields: id, date, amount, quantity, currency, description_raw, product_name, category, sub_category, sub_sub_category, for_whom, notes, ai_hint.",
     "Do not add, remove, or rename fields.",
     "Keep amount as number, quantity as integer, and all other non-numeric values as strings.",
-    "Supported currencies are UAH, USD, EUR, and PLN.",
+    "Supported currencies are UAH, USD, EUR, PLN, and RUB.",
     "Use the user's default currency unless the text explicitly mentions another supported currency.",
     "If the text includes $, dollar, dollars, usd, бакс, баксы, or доллар, use USD.",
     "If the text includes €, euro, eur, or евро, use EUR.",
@@ -1109,6 +1314,7 @@ function buildSystemPrompt() {
 function buildNormalizationPrompt(payload, nextId, existingExpenses, settings = {}) {
   const catalogs = buildExistingCatalogs(existingExpenses);
   const categoryCatalog = sanitizeSettings(settings).category_catalog;
+  const learningExamples = buildRecentLearningExamples(existingExpenses);
 
   return [
     "Normalize the following expense into the exact JSON schema.",
@@ -1131,6 +1337,7 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses, settings = 
     `If no currency is explicit, use currency=${normalizeCurrency(payload.currency, "UAH")}.`,
     "If ai_hint is present, follow it unless it conflicts with the fixed schema.",
     "When a matching value already exists in the catalog, reuse it.",
+    "Use the recent user-corrected examples as the strongest style guide for similar future expenses.",
     "Also prefer the user's category reference list when semantically suitable.",
     "If nothing suitable exists in the catalog, create a new concise Russian label.",
     "Avoid returning other for category, sub_category, sub_sub_category, and for_whom when the description contains enough meaning to infer something better.",
@@ -1140,6 +1347,9 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses, settings = 
     "",
     "User category reference list:",
     JSON.stringify(categoryCatalog, null, 2),
+    "",
+    "Recent user-corrected examples:",
+    JSON.stringify(learningExamples, null, 2),
     "",
     JSON.stringify(
       {
@@ -1156,6 +1366,25 @@ function buildNormalizationPrompt(payload, nextId, existingExpenses, settings = 
       2,
     ),
   ].join("\n");
+}
+
+function buildRecentLearningExamples(expenses) {
+  return [...expenses]
+    .filter((expense) => expense?.description_raw && expense?.category)
+    .sort((left, right) => {
+      const leftId = Number(left.id) || 0;
+      const rightId = Number(right.id) || 0;
+      return rightId - leftId;
+    })
+    .slice(0, 20)
+    .map((expense) => ({
+      description_raw: String(expense.description_raw || ""),
+      product_name: String(expense.product_name || ""),
+      category: String(expense.category || ""),
+      sub_category: String(expense.sub_category || ""),
+      sub_sub_category: String(expense.sub_sub_category || ""),
+      for_whom: ALLOWED_FOR_WHOM.has(String(expense.for_whom || "")) ? String(expense.for_whom) : "other",
+    }));
 }
 
 function fallbackNormalize(payload, nextId) {
@@ -1512,12 +1741,18 @@ function parsePathId(pathname, prefix) {
 
 async function resetAllData(env, authContext) {
   await Promise.all([
+    resetHistoryData(env, authContext),
+    env.EXPENSES_KV?.delete(getUserKeyPrefix(authContext, "settings")),
+  ]);
+}
+
+async function resetHistoryData(env, authContext) {
+  await Promise.all([
     clearJsonRecords(env, authContext, "expenses", "expenses:"),
     clearJsonRecords(env, authContext, "incomes", "incomes:"),
     clearJsonRecords(env, authContext, "crypto_assets", "crypto_assets:"),
     clearJsonRecords(env, authContext, "recurring_expenses", "recurring_expenses:"),
     clearJsonRecords(env, authContext, "materialized_recurring", MATERIALIZED_RECURRING_PREFIX),
-    env.EXPENSES_KV?.delete(getUserKeyPrefix(authContext, "settings")),
   ]);
 }
 
@@ -1876,6 +2111,7 @@ function formatForWhomDecisionLabel(value) {
 
 export const __workerTestables = {
   buildExistingCatalogs,
+  buildRecentLearningExamples,
   buildNormalizationDecision,
   calculateTotalAmount,
   cleanJsonText,
@@ -1887,9 +2123,11 @@ export const __workerTestables = {
   inferProductName,
   isRecurringDue,
   parseQuickExpenseText,
+  parseTelegramExpenseCallbackData,
   sanitizeCryptoAsset,
   sanitizeExpense,
   sanitizeIncome,
   sanitizeRecurringExpense,
   sanitizeSettings,
+  resetHistoryData,
 };
