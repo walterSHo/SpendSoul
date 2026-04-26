@@ -164,7 +164,7 @@ if (hasTelegramAuth()) {
   setStatus("Войдите через @spendsoul_bot, чтобы загрузить ваши расходы.", true);
   setIncomeStatus("Войдите через Telegram, чтобы загрузить доходы.", true);
   setCryptoStatus("Войдите через Telegram, чтобы загрузить крипто портфель.", true);
-  setRecurringStatus("Войдите через Telegram, чтобы загрузить регулярные расходы.", true);
+  setRecurringStatus("Войдите через Telegram, чтобы загрузить подписки.", true);
 }
 render();
 renderTelegramLoginGate();
@@ -176,7 +176,7 @@ recurringForm.addEventListener("submit", handleRecurringSubmit);
 clearLocalButton?.addEventListener("click", handleClearLocalStorage);
 resetServerButton?.addEventListener("click", handleResetServerData);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
-materializeRecurringButton.addEventListener("click", handleMaterializeRecurring);
+materializeRecurringButton?.addEventListener("click", handleMaterializeRecurring);
 quickAddButton.addEventListener("click", handleQuickAdd);
 quantityDownButton.addEventListener("click", () => adjustQuantity(-1));
 quantityUpButton.addEventListener("click", () => adjustQuantity(1));
@@ -545,7 +545,7 @@ async function handleRecurringSubmit(event) {
     start_date: recurringStartDateInput.value,
     amount: Number(recurringAmountInput.value),
     description_raw: recurringDescriptionInput.value.trim(),
-    category: recurringCategoryInput.value.trim() || "регулярные",
+    category: recurringCategoryInput.value.trim() || "подписки",
     sub_category: recurringSubCategoryInput.value.trim() || "подписки",
     for_whom: recurringForWhomInput.value,
     frequency: recurringFrequencyInput.value,
@@ -563,7 +563,7 @@ async function handleRecurringSubmit(event) {
   }
 
   setRecurringLoading(true);
-  setRecurringStatus("Сохраняю регулярную трату...");
+  setRecurringStatus("Сохраняю подписку...");
 
   try {
     const savedRecurringExpense = await createRecurringExpense(payload);
@@ -575,9 +575,9 @@ async function handleRecurringSubmit(event) {
     updateCustomSelect(recurringFrequencyInput);
     updateCustomSelect(recurringForWhomInput);
     renderRecurringView();
-    setRecurringStatus("Регулярная трата сохранена.");
+    setRecurringStatus("Подписка сохранена.");
   } catch (error) {
-    setRecurringStatus(error.message || "Не удалось сохранить регулярную трату.", true);
+    setRecurringStatus(error.message || "Не удалось сохранить подписку.", true);
   } finally {
     setRecurringLoading(false);
   }
@@ -588,8 +588,10 @@ async function handleMaterializeRecurring() {
     return;
   }
 
-  materializeRecurringButton.disabled = true;
-  setRecurringStatus("Создаю расходы за текущий период...");
+  if (materializeRecurringButton) {
+    materializeRecurringButton.disabled = true;
+  }
+  setRecurringStatus("Создаю расходы из подписок...");
 
   try {
     const generatedExpenses = await materializeRecurringExpenses();
@@ -598,14 +600,16 @@ async function handleMaterializeRecurring() {
       persistExpenses(expenses);
       syncFilterOptions();
       render();
-      setRecurringStatus(`Создано регулярных расходов: ${generatedExpenses.length}.`);
+      setRecurringStatus(`Создано расходов из подписок: ${generatedExpenses.length}.`);
     } else {
-      setRecurringStatus("За текущий период новых регулярных расходов нет.");
+      setRecurringStatus("За текущий период новых расходов из подписок нет.");
     }
   } catch (error) {
-    setRecurringStatus(error.message || "Не удалось создать регулярные расходы.", true);
+    setRecurringStatus(error.message || "Не удалось создать расходы из подписок.", true);
   } finally {
-    materializeRecurringButton.disabled = false;
+    if (materializeRecurringButton) {
+      materializeRecurringButton.disabled = false;
+    }
   }
 }
 
@@ -634,7 +638,7 @@ async function handleResetServerData() {
     return;
   }
 
-  if (!confirm("Удалить все ваши расходы, доходы, крипто позиции и регулярные правила на сервере?")) {
+  if (!confirm("Удалить все ваши расходы, доходы, крипто позиции и подписки на сервере?")) {
     return;
   }
 
@@ -883,6 +887,12 @@ function handleRecurringTableClick(event) {
     return;
   }
 
+  const toggleButton = event.target.closest("[data-toggle-recurring-id]");
+  if (toggleButton) {
+    handleToggleRecurringExpense(Number(toggleButton.dataset.toggleRecurringId));
+    return;
+  }
+
   const editButton = event.target.closest("[data-edit-recurring-id]");
   if (!editButton) {
     return;
@@ -890,7 +900,7 @@ function handleRecurringTableClick(event) {
 
   const recurringExpense = recurringExpenses.find((item) => item.id === Number(editButton.dataset.editRecurringId));
   if (!recurringExpense) {
-    setRecurringStatus("Не удалось найти регулярную трату.", true);
+    setRecurringStatus("Не удалось найти подписку.", true);
     return;
   }
 
@@ -906,7 +916,7 @@ function handleRecurringTableClick(event) {
   updateCustomSelect(recurringFrequencyInput);
   updateCustomSelect(recurringForWhomInput);
   recurringDescriptionInput.focus();
-  setRecurringStatus("Регулярная трата загружена в форму. Сохранение обновит правило.");
+  setRecurringStatus("Подписка загружена в форму. Сохранение обновит запись.");
 }
 
 async function deleteExpenseById(id) {
@@ -975,7 +985,7 @@ async function deleteRecurringExpenseById(id) {
     return;
   }
 
-  if (!Number.isFinite(id) || !confirm("Удалить эту регулярную трату?")) {
+  if (!Number.isFinite(id) || !confirm("Удалить эту подписку?")) {
     return;
   }
 
@@ -984,9 +994,34 @@ async function deleteRecurringExpenseById(id) {
     recurringExpenses = recurringExpenses.filter((item) => item.id !== id);
     persistRecurringExpenses(recurringExpenses);
     renderRecurringView();
-    setRecurringStatus("Регулярная трата удалена.");
+    setRecurringStatus("Подписка удалена.");
   } catch (error) {
-    setRecurringStatus(error.message || "Не удалось удалить регулярную трату.", true);
+    setRecurringStatus(error.message || "Не удалось удалить подписку.", true);
+  }
+}
+
+async function handleToggleRecurringExpense(id) {
+  if (blockOfflineWrite(setRecurringStatus)) {
+    return;
+  }
+
+  const recurringExpense = recurringExpenses.find((item) => item.id === id);
+  if (!recurringExpense) {
+    setRecurringStatus("Не удалось найти подписку.", true);
+    return;
+  }
+
+  try {
+    const savedRecurringExpense = await createRecurringExpense({
+      ...recurringExpense,
+      active: !recurringExpense.active,
+    });
+    recurringExpenses = upsertRecurringExpense(recurringExpenses, savedRecurringExpense);
+    persistRecurringExpenses(recurringExpenses);
+    renderRecurringView();
+    setRecurringStatus(savedRecurringExpense.active ? "Подписка снова активна." : "Подписка отключена.");
+  } catch (error) {
+    setRecurringStatus(error.message || "Не удалось изменить статус подписки.", true);
   }
 }
 
@@ -1198,6 +1233,82 @@ async function createRecurringExpense(payload) {
   return sanitizeRecurringExpense(data);
 }
 
+async function maybeCreateSubscriptionFromExpense(expense) {
+  if (!isSubscriptionExpense(expense) || hasMatchingSubscription(expense)) {
+    return null;
+  }
+
+  try {
+    return await createRecurringExpense({
+      start_date: expense.date || new Date().toISOString().slice(0, 10),
+      amount: expense.amount,
+      currency: expense.currency || "UAH",
+      description_raw: getExpenseShortTitle(expense),
+      category: "подписки",
+      sub_category: inferSubscriptionSubCategory(expense),
+      for_whom: expense.for_whom || "myself",
+      frequency: "monthly",
+      notes: buildSubscriptionNote(expense),
+      active: true,
+    });
+  } catch (error) {
+    setRecurringStatus(error.message || "Не удалось автоматически добавить подписку.", true);
+    return null;
+  }
+}
+
+function isSubscriptionExpense(expense) {
+  const text = normalizeSearchText(
+    [
+      expense.description_raw,
+      expense.product_name,
+      expense.category,
+      expense.sub_category,
+      expense.sub_sub_category,
+      expense.notes,
+      expense.ai_hint,
+    ].join(" "),
+  );
+
+  return /\b(subscription|subscribe|premium|plus|pro)\b/.test(text) || text.includes("подпис");
+}
+
+function hasMatchingSubscription(expense) {
+  const title = normalizeSubscriptionTitle(getExpenseShortTitle(expense));
+  if (!title) {
+    return false;
+  }
+
+  return recurringExpenses.some((item) => normalizeSubscriptionTitle(item.description_raw) === title);
+}
+
+function normalizeSubscriptionTitle(value) {
+  return normalizeSearchText(value).replace(/\s+/g, " ").trim();
+}
+
+function inferSubscriptionSubCategory(expense) {
+  const text = normalizeSearchText([expense.description_raw, expense.product_name, expense.sub_category, expense.notes].join(" "));
+  if (/netflix|youtube|spotify|apple music|megogo|sweet tv|ivi|кино|музык|стрим/.test(text)) {
+    return "стриминг";
+  }
+
+  if (/chatgpt|openai|notion|figma|adobe|github|vpn|софт|software|app|cloud|icloud|google/.test(text)) {
+    return "софт";
+  }
+
+  if (/интернет|мобиль|телефон|связь|lifecell|kyivstar|vodafone/.test(text)) {
+    return "связь";
+  }
+
+  return String(expense.sub_category || "сервис").trim();
+}
+
+function buildSubscriptionNote(expense) {
+  const notes = String(expense.notes || "").trim();
+  const source = `Автоматически добавлено из расхода №${expense.id}.`;
+  return notes ? `${source} ${notes}` : source;
+}
+
 async function deleteServerItem(resource, id) {
   const response = await apiFetch(`/api/${resource}/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -1234,7 +1345,7 @@ async function materializeRecurringExpenses() {
   }
 
   if (!response.ok || !Array.isArray(data)) {
-    throw new Error(data?.error || "Не удалось создать регулярные траты.");
+    throw new Error(data?.error || "Не удалось создать расходы из подписок.");
   }
 
   return data.map(sanitizeExpense);
@@ -1343,11 +1454,11 @@ async function fetchRecurringExpenses() {
   try {
     data = await response.json();
   } catch {
-    throw new Error("Не удалось прочитать список регулярных расходов с сервера.");
+    throw new Error("Не удалось прочитать список подписок с сервера.");
   }
 
   if (!response.ok || !Array.isArray(data)) {
-    throw new Error(data?.error || "Не удалось загрузить регулярные расходы с сервера.");
+    throw new Error(data?.error || "Не удалось загрузить подписки с сервера.");
   }
 
   return data.map(sanitizeRecurringExpense).sort(sortByStartDateDesc);
@@ -1379,7 +1490,7 @@ async function syncExpensesOnLoad() {
   setStatus("Загружаю данные с сервера...");
   setIncomeStatus("Загружаю доходы с сервера...");
   setCryptoStatus("Загружаю крипто портфель...");
-  setRecurringStatus("Загружаю регулярные расходы...");
+  setRecurringStatus("Загружаю подписки...");
 
   const [expenseSyncResult, incomeSyncResult, cryptoSyncResult, recurringSyncResult] = await Promise.allSettled([
     fetchExpenses(),
@@ -1418,9 +1529,9 @@ async function syncExpensesOnLoad() {
   if (recurringSyncResult.status === "fulfilled") {
     recurringExpenses = recurringSyncResult.value;
     persistRecurringExpenses(recurringExpenses);
-    setRecurringStatus("Регулярные расходы синхронизированы.");
+    setRecurringStatus("Подписки синхронизированы.");
   } else {
-    setRecurringStatus(recurringSyncResult.reason?.message || "Не удалось синхронизировать регулярные расходы.", true);
+    setRecurringStatus(recurringSyncResult.reason?.message || "Не удалось синхронизировать подписки.", true);
   }
 
   visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
@@ -1641,7 +1752,7 @@ function sanitizeRecurringExpense(recurringExpense) {
     amount: Number((Number(safeRecurringExpense.amount) || 0).toFixed(2)),
     currency: String(safeRecurringExpense.currency || "UAH"),
     description_raw: String(safeRecurringExpense.description_raw || "").trim(),
-    category: String(safeRecurringExpense.category || "регулярные").trim(),
+    category: String(safeRecurringExpense.category || "подписки").trim(),
     sub_category: String(safeRecurringExpense.sub_category || "подписки").trim(),
     for_whom: ALLOWED_FOR_WHOM.has(String(safeRecurringExpense.for_whom || "")) ? String(safeRecurringExpense.for_whom) : "myself",
     frequency: frequency === "weekly" ? "weekly" : "monthly",
@@ -1751,6 +1862,20 @@ function renderIncomeView() {
   renderIncomeTable();
 }
 
+function formatSubscriptionCountLabel(count) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) {
+    return "активная подписка";
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return "активные подписки";
+  }
+
+  return "активных подписок";
+}
+
 function renderIncomeTable() {
   if (!incomesTableBody) {
     return;
@@ -1852,14 +1977,14 @@ function renderRecurringView() {
   }, 0);
 
   recurringMonthlyAmount.textContent = `${monthlyAmount.toFixed(2)} UAH`;
-  recurringCount.textContent = `${activeRecurringExpenses.length} активных правил`;
+  recurringCount.textContent = `${activeRecurringExpenses.length} ${formatSubscriptionCountLabel(activeRecurringExpenses.length)}`;
   recurringTableBody.innerHTML = "";
 
   if (!recurringExpenses.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 8;
-    cell.textContent = "Пока нет регулярных расходов.";
+    cell.colSpan = 9;
+    cell.textContent = "Пока нет подписок. Если в расходе указать подписку, она появится здесь.";
     row.appendChild(cell);
     recurringTableBody.appendChild(row);
     return;
@@ -1875,9 +2000,11 @@ function renderRecurringView() {
       <td>${escapeHtml(recurringExpense.frequency === "weekly" ? "Неделя" : "Месяц")}</td>
       <td>${escapeHtml(formatCategoryLabel(recurringExpense.category))}</td>
       <td>${escapeHtml(formatForWhomLabel(recurringExpense.for_whom))}</td>
+      <td>${escapeHtml(recurringExpense.active ? "Активна" : "Отключена")}</td>
       <td class="table-actions-cell">
-        <button type="button" class="table-icon-button" data-edit-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Редактировать регулярную">✎</button>
-        <button type="button" class="table-icon-button table-danger-button" data-delete-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Удалить регулярную">×</button>
+        <button type="button" class="table-icon-button" data-toggle-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="${recurringExpense.active ? "Отключить подписку" : "Вернуть подписку"}">${recurringExpense.active ? "−" : "+"}</button>
+        <button type="button" class="table-icon-button" data-edit-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Редактировать подписку">✎</button>
+        <button type="button" class="table-icon-button table-danger-button" data-delete-recurring-id="${escapeHtml(String(recurringExpense.id))}" aria-label="Удалить подписку">×</button>
       </td>
     `;
     recurringTableBody.appendChild(row);
@@ -2701,7 +2828,7 @@ function setCryptoLoading(isLoading) {
 
 function setRecurringLoading(isLoading) {
   recurringSubmitButton.disabled = isLoading;
-  recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить регулярную";
+  recurringSubmitButton.textContent = isLoading ? "Сохраняю..." : "Сохранить подписку";
 }
 
 function setStatus(message, isError = false) {
@@ -2778,9 +2905,14 @@ async function handleConfirmSave() {
     const currentMode = pendingMode;
     const savedExpense = await createExpense(pendingExpense);
     expenses = upsertExpense(expenses, savedExpense);
+    const createdSubscription = currentMode === "create" ? await maybeCreateSubscriptionFromExpense(savedExpense) : null;
     visibleWeekStart = getStartOfWeek(getLatestExpenseDate(expenses));
     visibleMonthDate = getStartOfMonth(getLatestFinancialDate(expenses, incomes));
     persistExpenses(expenses);
+    if (createdSubscription) {
+      recurringExpenses = upsertRecurringExpense(recurringExpenses, createdSubscription);
+      persistRecurringExpenses(recurringExpenses);
+    }
     syncFilterOptions();
     render();
     if (pendingMode === "create") {
@@ -2792,7 +2924,13 @@ async function handleConfirmSave() {
     pendingDecision = null;
     pendingMode = "create";
     closeConfirmDialog();
-    setStatus(currentMode === "edit" ? "Запись обновлена." : "Трата сохранена.");
+    setStatus(
+      currentMode === "edit"
+        ? "Запись обновлена."
+        : createdSubscription
+          ? "Трата сохранена, подписка добавлена."
+          : "Трата сохранена.",
+    );
   } catch (error) {
     setStatus(error.message || "Не удалось сохранить трату.", true);
   } finally {

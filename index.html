@@ -15,12 +15,12 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./style.css?v=20260426-8" />
+    <link rel="stylesheet" href="./style.css?v=20260426-9" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="./config.js?v=20260426-2"></script>
     <script src="./config.local.js?v=20260426-2"></script>
-    <script type="module" src="./app.js?v=20260426-11" defer></script>
+    <script type="module" src="./app.js?v=20260426-12" defer></script>
   </head>
   <body>
     <div class="page-shell">
@@ -43,7 +43,7 @@
             <button type="button" class="view-tab active" data-view-target="expenses">Расходы</button>
             <button type="button" class="view-tab" data-view-target="incomes">Доходы</button>
             <button type="button" class="view-tab" data-view-target="crypto">Крипта</button>
-            <button type="button" class="view-tab" data-view-target="recurring">Регулярные</button>
+            <button type="button" class="view-tab" data-view-target="recurring">Подписки</button>
           </nav>
         </div>
       </header>
@@ -491,15 +491,15 @@
       <div id="recurringView" class="app-view hidden">
         <section class="income-grid">
           <div class="hero-copy-card recurring-form-card">
-            <p class="hero-kicker">Автоматические траты</p>
+            <p class="hero-kicker">Контроль подписок</p>
             <div class="hero-form-head">
               <div>
-                <h2>Регулярная трата</h2>
+                <h2>Подписка</h2>
                 <p class="hero-copy">
-                  Добавьте аренду, подписки, интернет или сервисы. Приложение сможет создать расход за текущий период.
+                  Сохраняйте сервисы и регулярные платежи, чтобы видеть, что можно отключить для экономии.
                 </p>
               </div>
-              <div class="panel-chip">Авто</div>
+              <div class="panel-chip">Экономия</div>
             </div>
 
             <form id="recurringForm" class="expense-form hero-expense-form">
@@ -534,28 +534,27 @@
               </label>
 
               <label class="full-width">
-                <span>Описание</span>
-                <input type="text" id="recurringDescription" placeholder="Например: аренда квартиры, Netflix, интернет" required />
+                <span>Название</span>
+                <input type="text" id="recurringDescription" placeholder="Например: Netflix, Spotify, ChatGPT, интернет" required />
               </label>
 
               <label>
                 <span>Категория</span>
-                <input type="text" id="recurringCategory" placeholder="Например: дом" />
+                <input type="text" id="recurringCategory" placeholder="Например: подписки" />
               </label>
 
               <label>
                 <span>Подкатегория</span>
-                <input type="text" id="recurringSubCategory" placeholder="Например: подписки" />
+                <input type="text" id="recurringSubCategory" placeholder="Например: стриминг, софт, связь" />
               </label>
 
               <label class="full-width">
                 <span>Заметки</span>
-                <textarea id="recurringNotes" rows="3" placeholder="Например: списывается 5 числа"></textarea>
+                <textarea id="recurringNotes" rows="3" placeholder="Например: списывается 5 числа, можно отключить в приложении"></textarea>
               </label>
 
               <div class="form-actions">
-                <button type="submit" id="recurringSubmitButton">Сохранить регулярную</button>
-                <button type="button" id="materializeRecurringButton" class="ghost-button">Создать за период</button>
+                <button type="submit" id="recurringSubmitButton">Сохранить подписку</button>
               </div>
 
               <p id="recurringStatusMessage" class="status-message" aria-live="polite"></p>
@@ -563,9 +562,9 @@
           </div>
 
           <div class="hero-stat-card recurring-stat-card">
-            <span class="stat-label">Регулярные платежи</span>
+            <span class="stat-label">Подписки</span>
             <strong id="recurringMonthlyAmount">0.00 UAH</strong>
-            <small id="recurringCount">0 активных правил</small>
+            <small id="recurringCount">0 активных подписок</small>
           </div>
         </section>
 
@@ -573,8 +572,8 @@
           <div class="panel-header-row">
             <div class="panel-heading">
               <p class="panel-label">Автоматизация</p>
-              <h2>Регулярные расходы</h2>
-              <p>Правила для подписок, аренды, интернета и других повторяющихся платежей.</p>
+              <h2>Что можно отключить</h2>
+              <p>Каталог активных и отключенных подписок: сервис, сумма, период и назначение платежа.</p>
             </div>
           </div>
 
@@ -585,10 +584,11 @@
                   <th>№</th>
                   <th>Старт</th>
                   <th>Сумма</th>
-                  <th>Описание</th>
+                  <th>Сервис</th>
                   <th>Частота</th>
                   <th>Категория</th>
                   <th>Для кого</th>
+                  <th>Статус</th>
                   <th class="table-actions-head" aria-label="Действия"></th>
                 </tr>
               </thead>
