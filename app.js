@@ -170,8 +170,8 @@ form.addEventListener("submit", handleSubmit);
 incomeForm.addEventListener("submit", handleIncomeSubmit);
 cryptoForm.addEventListener("submit", handleCryptoSubmit);
 recurringForm.addEventListener("submit", handleRecurringSubmit);
-clearLocalButton.addEventListener("click", handleClearLocalStorage);
-resetServerButton.addEventListener("click", handleResetServerData);
+clearLocalButton?.addEventListener("click", handleClearLocalStorage);
+resetServerButton?.addEventListener("click", handleResetServerData);
 refreshCryptoPricesButton.addEventListener("click", refreshCryptoPrices);
 materializeRecurringButton.addEventListener("click", handleMaterializeRecurring);
 quickAddButton.addEventListener("click", handleQuickAdd);
@@ -552,7 +552,9 @@ async function handleResetServerData() {
     return;
   }
 
-  resetServerButton.disabled = true;
+  if (resetServerButton) {
+    resetServerButton.disabled = true;
+  }
   setSyncState("loading", "Сбрасываю серверные данные...");
 
   try {
@@ -564,7 +566,9 @@ async function handleResetServerData() {
     setSyncState("offline", "Сброс сервера не выполнен");
     setStatus(error.message || "Не удалось сбросить серверные данные.", true);
   } finally {
-    resetServerButton.disabled = false;
+    if (resetServerButton) {
+      resetServerButton.disabled = false;
+    }
   }
 }
 
