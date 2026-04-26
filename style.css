@@ -1067,23 +1067,25 @@ button[type="submit"]:disabled,
   text-transform: capitalize;
 }
 
-#prevMonthButton::before,
-#nextMonthButton::before,
-#prevWeekButton::before,
-#nextWeekButton::before {
-  display: block;
-  font-size: 16px;
-  line-height: 1;
+#prevMonthButton::after,
+#nextMonthButton::after,
+#prevWeekButton::after,
+#nextWeekButton::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-top: 3px solid currentColor;
+  border-right: 3px solid currentColor;
 }
 
-#prevMonthButton::before,
-#prevWeekButton::before {
-  content: "<";
+#prevMonthButton::after,
+#prevWeekButton::after {
+  transform: translateX(2px) rotate(-135deg);
 }
 
-#nextMonthButton::before,
-#nextWeekButton::before {
-  content: ">";
+#nextMonthButton::after,
+#nextWeekButton::after {
+  transform: translateX(-2px) rotate(45deg);
 }
 
 .monthly-week-breakdown {

@@ -184,7 +184,7 @@ categoryFilter.addEventListener("change", handleFiltersChange);
 forWhomFilter.addEventListener("change", handleFiltersChange);
 dateFromFilter.addEventListener("change", handleFiltersChange);
 dateToFilter.addEventListener("change", handleFiltersChange);
-expenseSearchInput.addEventListener("input", handleFiltersChange);
+expenseSearchInput?.addEventListener("input", handleFiltersChange);
 tableSortButtons.forEach((button) => button.addEventListener("click", handleSortChange));
 tableBody.addEventListener("click", handleTableBodyClick);
 incomesTableBody.addEventListener("click", handleIncomeTableClick);
@@ -2633,7 +2633,7 @@ function getExpenseShortTitle(expense) {
 }
 
 function applyFilters(sourceExpenses) {
-  const searchValue = normalizeSearchText(expenseSearchInput.value);
+  const searchValue = normalizeSearchText(expenseSearchInput?.value || "");
 
   return sourceExpenses.filter((expense) => {
     if (categoryFilter.value !== "all" && expense.category !== categoryFilter.value) {
